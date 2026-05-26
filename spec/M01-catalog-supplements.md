@@ -61,7 +61,7 @@ From Inference Engineering book §5.1.1 "Number Formats" table on page 121.
 - slug: bf16
   bits_per_weight: 16
   kv_cache_bits_default: 16
-  introduced_architecture: Pascal
+  introduced_architecture: Ampere
   notes: "Brain float; wider dynamic range than fp16, same memory cost"
 
 - slug: fp8
@@ -70,10 +70,18 @@ From Inference Engineering book §5.1.1 "Number Formats" table on page 121.
   introduced_architecture: Hopper
   notes: "e4m3 / e5m2 dual-format. Native FP8 tensor cores from Hopper onward."
 
-# ... 7 more rows for: int8, int4, nvfp4, fp4, mxfp4, mxfp8, fp6
-# NOTE: only ship rows whose accept-criteria semantics are clear. Skip
-# experimental formats until measured cells exist (M10).
+# ... 7 more rows: int8, int4, fp4, fp6 (stable);
+#                  nvfp4, mxfp4, mxfp8 (experimental: true).
 ```
+
+**Ship all 10 rows; mark the iffy ones with `experimental: true`.**
+The earlier guidance ("skip experimental formats until measured cells
+exist (M10)") contradicted the "exactly 10 rows" acceptance criterion.
+Resolution: the `Quantization` schema carries `experimental: bool =
+False`, and M07 (tps_estimator) plus M10 (benchmark cells) filter on
+that flag so v1 plan output never anchors throughput on an unsettled
+format. The seed YAML is single source of truth; downstream consumers
+opt in to experimental rows explicitly.
 
 ### Pydantic schema validation
 
@@ -102,6 +110,7 @@ class Quantization(BaseModel):
     kv_cache_bits_default: int
     introduced_architecture: str
     notes: str
+    experimental: bool = False  # see "Ship all 10 rows" note above
 ```
 
 ### Loader
@@ -142,9 +151,10 @@ Raises with line numbers on malformed YAML.
 - [ ] Every GPU row has a publicly accessible `datasheet_url`.
 - [ ] Every quantization row references its `introduced_architecture` per book §5.1.1.
 - [ ] Pydantic schemas reject malformed YAML (missing required field, unknown field) with line numbers in the error.
-- [ ] All slugs join to real entries in a captured ComputePrices `/api/v1/gpus` fixture (`tests/fixtures/cp_gpus_2026-05-25.json`).
+- [ ] All slugs join to real entries in a captured ComputePrices `/api/v1/gpus` fixture (e.g. `tests/fixtures/cp_gpus_<YYYY-MM-DD>.json`; the actual file is dated by UTC at capture time, see `scripts/capture_cp_gpus_fixture.py`).
 - [ ] `uv run pytest tests/catalog/` green.
 - [ ] No live network calls in tests.
+- [ ] Rows whose dense FP8/FP4 TFLOPS could not be confirmed against the linked vendor whitepaper at M01 capture time carry `fp8_tflops_dense: null` / `fp4_tflops_dense: null` rather than a guess. M07 treats null as `requires_measurement` per ADR-010 / TPS source enum, so the trust contract holds even before backfill.
 
 ---
 
