@@ -54,11 +54,13 @@ Tools 2, 3, 4 also return their normal payload **OR** `UnknownModelResponse` per
        model_slug: str
        hf_repo_id: str
        status: Literal["resolved", "sync_failed", "not_found_on_hf"]
-       trust_envelope: TrustEnvelope        # freshness["huggingface"] populated on success
+       hf_revision_sha: str | None          # populated when status == "resolved"
        error_detail: str | None             # populated when status != "resolved"
    ```
 
    Keeping `resolve_model` as its own tool (rather than threading `hf_repo_id_hint` through every model-taking tool) keeps the other tool signatures stable and lets MCP clients schema-validate them without a union type per arg.
+
+   `ResolveModelResult` deliberately does NOT carry a `trust_envelope`. Per `spec/SHARED.md`, the trust envelope wraps **numerical** tool outputs; `resolve_model` returns a status + diagnostic, no numbers. The follow-up call to `budget_to_plan` / `find_cheapest_deployment` / etc. is where the trust envelope appears, and `freshness["huggingface"]` on that envelope reflects the just-completed sync (`hf_revision_sha` matches the value returned here on the resolved path).
 
 ### Resources
 
@@ -213,7 +215,7 @@ The merging is M03's responsibility — see `spec/M03-hf-model-sync.md` § "User
 
 - [ ] `whatcanirun-mcp` starts, completes MCP handshake, advertises capabilities.
 - [ ] All 6 tools callable; smoke-tested via fixtures (no live network in CI).
-- [ ] Every **numerical** tool response (and every CostCell / BudgetPlanRow / FitResult / DeploymentComparison contained in one) has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`. Non-numerical responses (`UnknownModelResponse`, `ResolveModelResult` when `status="resolved"`) do not — per `spec/SHARED.md`, the trust envelope wraps numbers; an elicitation or a successful resolution has none to wrap.
+- [ ] Every **numerical** tool response (and every CostCell / BudgetPlanRow / FitResult / DeploymentComparison contained in one) has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`. Non-numerical responses (`UnknownModelResponse`, `ResolveModelResult`) do not carry one — per `spec/SHARED.md`, the trust envelope wraps numbers; an elicitation or a status/diagnostic response has none to wrap.
 - [ ] `confidence == min(confidence_breakdown.values())` enforced by a property test on TrustEnvelope construction.
 - [ ] Unknown-model dispatcher covers all three cases (lazy-sync, partial-answer, interactive elicitation) with named caveats. `resolve_model(model_slug, hf_repo_id)` persists user-supplied pairs to `~/.config/whatcanirun/user_models.yaml`, not `seeds/tracked_models.yaml`.
 - [ ] M03's `sync_all_tracked()` reads from BOTH `seeds/tracked_models.yaml` AND `~/.config/whatcanirun/user_models.yaml` (when present) — the merged-loader contract is part of M03's surface, not M09's; see `spec/M03-hf-model-sync.md` § "User-extension file".
