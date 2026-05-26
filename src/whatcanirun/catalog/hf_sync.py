@@ -426,17 +426,44 @@ class HfModelSync:
         """Tmp + rename so a crash mid-write can't leave a half-written
         file that the next read would refuse to parse.
 
-        Uses O_EXCL | O_NOFOLLOW on the tmp open: a pre-existing file
-        or symlink at the predictable `<path>.tmp` location causes the
-        write to fail (FileExistsError) rather than silently follow
-        the redirect. This defends against a local attacker planting
-        a symlink at the tmp path to redirect the write to arbitrary
-        files the process user can write (config files, ssh keys, etc).
+        Uses O_EXCL | O_NOFOLLOW on the tmp open: a pre-existing
+        symlink at the predictable `<path>.tmp` location causes the
+        write to fail rather than silently follow the redirect. This
+        defends against a local attacker planting a symlink at the
+        tmp path to redirect the write to arbitrary files the process
+        user can write (config files, ssh keys, etc).
+
+        If the tmp path exists as a REGULAR file (not a symlink), it's
+        almost certainly a stale leftover from a prior sync that was
+        SIGKILLed between `os.open(...)` and `tmp.replace(path)`.
+        Unlink it once and retry; persistent failure (concurrent
+        process keeps recreating it) escalates. Without this recovery
+        the slug becomes unsyncable until manual cache cleanup, AND
+        in `sync_all_tracked` a single stale tmp aborts the whole
+        batch — the bare O_EXCL would be a perma-blocking foot-gun
+        under crash-prone deployments.
         """
         tmp = path.with_suffix(path.suffix + ".tmp")
-        # os.O_EXCL refuses if the file already exists; os.O_NOFOLLOW
-        # refuses to follow a symlink. Combined they prevent the
-        # TOCTOU redirect scenario.
+        try:
+            HfModelSync._open_excl_nofollow(tmp, contents)
+        except FileExistsError:
+            # Recover from a stale regular file only; a symlink keeps
+            # raising (the security defense) and the operator sees
+            # the loud failure.
+            if tmp.is_symlink() or not tmp.is_file():
+                raise
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+            HfModelSync._open_excl_nofollow(tmp, contents)
+        tmp.replace(path)
+
+    @staticmethod
+    def _open_excl_nofollow(tmp: Path, contents: str) -> None:
+        """Atomically open `tmp` with O_EXCL|O_NOFOLLOW, write
+        `contents`, and clean up on partial-write failure. Raises
+        FileExistsError if `tmp` already exists (any kind — file,
+        symlink, directory). `_write_atomic` decides whether to
+        recover or escalate."""
         fd = os.open(
             tmp,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -446,12 +473,12 @@ class HfModelSync:
             with os.fdopen(fd, "w") as f:
                 f.write(contents)
         except BaseException:
-            # If the write itself failed, clean up the empty tmp we just
-            # created so the next attempt can re-open it cleanly.
+            # If the write itself failed (disk full, EIO, etc.), clean
+            # up the empty tmp we just created so the next attempt can
+            # re-open it cleanly.
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
             raise
-        tmp.replace(path)
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}

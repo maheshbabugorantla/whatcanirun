@@ -81,6 +81,56 @@ async def test_tmp_path_symlink_redirect_is_refused(
     assert target.read_text() == "original victim contents"
 
 
+# -------------------------------------------------- stale .tmp from prior crash
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stale_tmp_from_prior_crash_does_not_perma_block_sync(
+    cache_dir: Path, llama_config: dict[str, Any]
+) -> None:
+    """A SIGKILL between `tmp.write_text(...)` and `tmp.replace(path)`
+    leaves a stale `<slug>.model.json.tmp` on disk. With the bare
+    O_EXCL guard, the next sync would FileExistsError forever — the
+    cache becomes unrecoverable per-slug without manual cleanup,
+    AND in `sync_all_tracked` one stale tmp would abort the whole
+    batch (FileExistsError isn't in the per-row except list).
+
+    The atomic-write helper detects a regular file (not a symlink)
+    sitting at the tmp path, unlinks it once, and retries. Symlink
+    redirect is still refused (that's the security defense from
+    the prior commit) — only stale regular files get cleaned up."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc"
+    respx.get("https://huggingface.co/api/models/meta-llama/Llama-3.3-70B-Instruct").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    respx.get(f"https://huggingface.co/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+
+    # Simulate the post-crash state: an orphaned tmp file from a
+    # previous sync that didn't complete.
+    hf_dir = cache_dir / "huggingface"
+    hf_dir.mkdir(parents=True)
+    stale_tmp = hf_dir / "llama-3-3-70b.model.json.tmp"
+    stale_tmp.write_text("leftover from a SIGKILLed prior sync")
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    model = await sync.sync_model(
+        repo_id=repo_id,
+        slug="llama-3-3-70b",
+        display_name="Llama",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    # Sync succeeded despite the stale tmp.
+    assert model.slug == "llama-3-3-70b"
+    # The fresh Model JSON is at the final cache path.
+    assert (hf_dir / "llama-3-3-70b.model.json").exists()
+
+
 # -------------------------------------------------- HF_TOKEN CRLF injection
 
 
