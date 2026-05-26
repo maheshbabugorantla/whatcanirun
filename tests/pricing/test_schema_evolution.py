@@ -1,19 +1,17 @@
-"""End-to-end schema-evolution tests for ComputePricesClient (Slice G).
+"""End-to-end schema-evolution tests for ComputePricesClient.
 
-ADR-015 says every upstream-data milestone ships a test proving
-projection tolerates new upstream fields. The CI workflow's dedicated
-`schema-evolution` job collects only tests carrying
-`@pytest.mark.schema_evolution` and fails the build if NONE are
-collected (the M00 shim that tolerated zero-test collection is
-reverted in this same commit).
+ADR-015: upstream-data clients must tolerate new fields without
+breaking validation. The CI workflow's dedicated `schema-evolution`
+job collects tests carrying `@pytest.mark.schema_evolution` and
+fails the build if none are collected.
 
-The tests below cover the full HTTP -> projection -> cache path with
-synthetic future fields injected at two levels:
+These tests inject synthetic future fields at two levels and assert
+they survive the full HTTP -> projection -> cache path:
   - new top-level field on a CP row
   - new nested key inside the evolving `specs` blob
 
-Both paths must succeed AND surface the new value in `row.raw` so a
-later milestone can opt into projecting it without re-deploying.
+Both paths must surface the new value via `row.raw` so a later code
+change can project it without re-deploying.
 """
 
 from __future__ import annotations

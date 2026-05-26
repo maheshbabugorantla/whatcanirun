@@ -1,10 +1,9 @@
-"""Snapshot persistence tests for ComputePricesClient (Slice D).
+"""Snapshot persistence tests for ComputePricesClient.
 
 After each successful fetch, write a timestamped, gzipped copy of the
 payload to `<cache_dir>/<endpoint>.snapshots/<UTC-ISO>.json.gz` so the
-30-day rolling history (per ADR-013) can serve as fallback when
-upstream is unreachable and as audit trail for trust envelope
-freshness claims.
+rolling history (per ADR-013) can serve as fallback when upstream is
+unreachable and as audit trail for trust envelope freshness claims.
 """
 
 from __future__ import annotations

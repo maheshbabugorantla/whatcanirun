@@ -1,12 +1,13 @@
-"""On-disk cache + TTL tests for ComputePricesClient (Slice C).
+"""On-disk cache + TTL tests for ComputePricesClient.
 
-Cache contract (from spec/M02-computeprices-client.md):
-  ~/.cache/whatcanirun/computeprices/<endpoint>.latest.json
+Cache contract:
+  <cache_dir>/<endpoint>.latest.json
   TTL: 1h for gpu-prices / llm-prices, 24h for gpus / llm-models
-  Pitfall #4: TTL needs jitter (±60s) to avoid thundering herd
+  Effective TTL = base TTL + uniform(-60, +60)s jitter to desync
+  fleet-wide refreshes
 
-Tests use a tmp_path cache and monkeypatch `_now` + file mtime to drive
-TTL behavior deterministically.
+Tests use a tmp_path cache and monkeypatch `_now` + `_jitter_seconds`
++ file mtime to drive TTL behavior deterministically.
 """
 
 from __future__ import annotations

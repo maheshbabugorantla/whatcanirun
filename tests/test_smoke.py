@@ -1,4 +1,4 @@
-"""M00 smoke test: entry point runs and prints the version."""
+"""Smoke test: entry point runs and prints the version."""
 
 from __future__ import annotations
 

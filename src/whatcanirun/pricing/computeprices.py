@@ -1,13 +1,9 @@
-"""Async ComputePrices client (M02 Slices B + C).
+"""Async ComputePrices client with on-disk cache and snapshot fallback.
 
   - GET /api/v1/gpus         -> list[GpuCatalogRow]    (24h cache)
   - GET /api/v1/gpu-prices   -> list[GpuPriceRow]      (1h cache)
   - GET /api/v1/llm-models   -> list[LlmCatalogRow]    (24h cache)
   - GET /api/v1/llm-prices   -> list[LlmPriceRow]      (1h cache)
-
-Snapshot persistence (D), upstream-down fallback (E), pruning (F), and
-schema-evolution test + CI shim revert (G) land in later slices on
-this branch.
 
 Auth: optional bearer token from `COMPUTEPRICES_API_KEY`. When unset,
 requests go through CP's anonymous 60/hr-per-IP tier. ADR-001.
@@ -40,7 +36,7 @@ from whatcanirun.pricing.projections import (
 )
 
 
-class ComputePricesUnavailable(Exception):  # noqa: N818  (name fixed by spec/M02-computeprices-client.md)
+class ComputePricesUnavailable(Exception):  # noqa: N818  (name part of public contract)
     """Raised when ComputePrices is unreachable AND no cached fallback
     exists. The caller is expected to surface this to the user with a
     trust envelope explaining why no number can be returned (ADR-013).
@@ -63,9 +59,9 @@ DEFAULT_TIMEOUT_S = 30.0
 
 # Per-endpoint cache TTL. Prices change hourly; catalogs change rarely.
 # Effective TTL is `_TTL_SECONDS[endpoint] + _jitter_seconds()` so the
-# fleet doesn't refresh in lockstep at the top of every hour (pitfall
-# #4 in spec/M02). Tests monkeypatch `_jitter_seconds` to 0 when they
-# need to assert TTL boundaries exactly.
+# fleet doesn't refresh in lockstep at the top of every hour. Tests
+# monkeypatch `_jitter_seconds` to 0 when they need to assert TTL
+# boundaries exactly.
 _TTL_SECONDS: dict[str, int] = {
     "gpus": 24 * 3600,
     "llm-models": 24 * 3600,
@@ -88,7 +84,7 @@ def _jitter_seconds() -> float:
     The point is to desynchronize fleet-wide refreshes — without it,
     every client started at roughly the same time would expire its
     cache simultaneously and hammer upstream in lockstep when prices
-    rolled over at the top of the hour (pitfall #4 in spec/M02).
+    rolled over at the top of the hour.
 
     Sampled per check rather than baked into the cached file's mtime
     so multiple processes sharing one cache directory each get an
@@ -101,9 +97,9 @@ def _jitter_seconds() -> float:
 class ComputePricesClient:
     """Async ComputePrices `/api/v1/*` client.
 
-    M02 Slice B surface: just the four fetch methods. Cache & fallback
-    behavior is added in Slices C-F; the `cache_dir` argument is
-    threaded through now so callers don't need to re-instantiate later.
+    Wraps the four catalog/pricing endpoints with on-disk caching,
+    retry+backoff on transient failures, snapshot-based fallback when
+    upstream is unreachable, and bounded 30-day snapshot retention.
     """
 
     def __init__(
@@ -159,9 +155,9 @@ class ComputePricesClient:
         methods, so callers don't burn extra quota by reaching for raw
         data.
 
-        Intended uses (per spec/M02 § Public surface):
-          - TrustEnvelope.freshness consumers (M08) reading
-            `meta.generated_at`
+        Intended uses:
+          - TrustEnvelope.freshness consumers that need
+            `meta.generated_at` (dropped by the typed projections)
           - sampling new upstream fields before projecting them
 
         Raises ValueError if `endpoint` isn't one of the four known CP
@@ -311,9 +307,9 @@ class ComputePricesClient:
         """Persist a gzipped snapshot per fetch.
 
         Filename is the UTC ISO timestamp with `:` replaced by `-` so the
-        name is valid on every supported filesystem (Windows in particular).
-        Used by Slice E for upstream-down fallback and by Slice F for the
-        30-day pruning policy.
+        name is valid on every supported filesystem (Windows in
+        particular). Snapshots are used for upstream-down fallback and
+        are pruned to a rolling retention window.
         """
         snapshots = self._snapshots_dir(endpoint)
         snapshots.mkdir(parents=True, exist_ok=True)
@@ -355,8 +351,8 @@ class ComputePricesClient:
                 payload = self._read_cache(endpoint)
             except ValueError:
                 # Cache is corrupt or malformed — refetch as if the file
-                # never existed. Logging happens at the M08 layer where
-                # the trust envelope makes it actionable.
+                # never existed. The trust envelope layer is responsible
+                # for surfacing this to the user when relevant.
                 payload = None
         if payload is None:
             try:

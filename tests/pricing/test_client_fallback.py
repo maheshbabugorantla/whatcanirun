@@ -1,14 +1,17 @@
-"""Upstream-down fallback tests for ComputePricesClient (Slice E).
+"""Upstream-down fallback tests for ComputePricesClient.
 
-ADR-013: when upstream is unreachable after retries are exhausted, the
-client serves the last-good `<endpoint>.latest.json` so tool calls
-never fail outright. The trust envelope (M08) is the channel for
-communicating staleness.
+ADR-013: when upstream is unreachable after retries are exhausted,
+the client serves the last-good `<endpoint>.latest.json` (or, if
+that's missing or corrupt, walks `<endpoint>.snapshots/` newest-first
+for a valid snapshot) so tool calls never fail outright. The trust
+envelope is the channel for communicating staleness to users.
 
 Hierarchy of behavior tested here:
   1. Transient 500 followed by success -> retry transparently recovers
-  2. All retries fail + cache present -> serve cache, no exception
-  3. All retries fail + cache empty   -> raise ComputePricesUnavailable
+  2. All retries fail + cache present  -> serve cache, no exception
+  3. All retries fail + cache missing or corrupt + snapshot present
+                                       -> serve snapshot
+  4. All retries fail + nothing usable -> raise ComputePricesUnavailable
 
 Retry waits are zeroed in tests so the suite doesn't burn ~7 seconds
 per fallback test on real exponential backoff sleeps.

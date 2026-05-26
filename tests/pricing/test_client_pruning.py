@@ -1,9 +1,9 @@
-"""Snapshot pruning tests for ComputePricesClient (Slice F).
+"""Snapshot pruning tests for ComputePricesClient.
 
-Spec: snapshots older than 30 days are deleted on every fetch so the
-on-disk cache doesn't grow without bound. The pruning age is exposed
-as a constructor kwarg so tests don't have to fast-forward time across
-weeks.
+Snapshots older than the retention window (default 30 days) are
+deleted on every fetch so the on-disk cache doesn't grow without
+bound. Pruning age is a constructor kwarg so tests can shorten the
+window instead of fast-forwarding mtime across weeks.
 """
 
 from __future__ import annotations

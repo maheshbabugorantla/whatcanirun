@@ -1,11 +1,10 @@
-"""HTTP client tests for ComputePrices (Slice B).
+"""HTTP client tests for ComputePrices.
 
 Covers the happy path for all four endpoints using respx to mock
-upstream. Cache (Slice C), snapshots (D), fallback (E), pruning (F),
-and schema-evolution (G) ship in subsequent slices.
+upstream, plus payload-shape validation and auth header behavior.
 
 Per ADR-013 + ADR-015 the client must:
-  - read from the real-fixture payload (captured via
+  - read from real-fixture payloads (captured via
     `scripts/capture_cp_gpus_fixture.py`) so tests stay aligned with
     upstream's actual schema
   - return typed projections (`GpuCatalogRow` etc.) that already carry

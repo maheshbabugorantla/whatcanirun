@@ -1,11 +1,12 @@
-"""Public raw-access tests for ComputePricesClient (review issue #6).
+"""Public raw-access tests for ComputePricesClient.
 
-spec/M02-computeprices-client.md lists `get_raw_response(endpoint)` in
-the public surface for two reasons:
-  - trust envelope provenance (M08 needs the unparsed `meta.generated_at`
-    timestamp for `freshness.computeprices`)
-  - access to fields not yet projected (anyone who wants to sample
-    CP's new shape before we add it to the typed projection)
+`get_raw_response(endpoint)` returns the full unparsed CP payload —
+including the top-level `meta` block that the typed projections drop.
+Two consumer use cases:
+  - trust envelope provenance reading `meta.generated_at` for
+    freshness reporting
+  - sampling new upstream fields before adding them to the typed
+    projection
 
 This method must follow the same cache + retry + fallback rules as
 the typed-projection methods so it doesn't drift into a separate
