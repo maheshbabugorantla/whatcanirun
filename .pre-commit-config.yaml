@@ -18,15 +18,22 @@ repos:
       - id: detect-private-key
       - id: mixed-line-ending
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+  # mypy via the project venv so the hook sees actual deps (httpx,
+  # tenacity, fastmcp, etc.). The mirrors-mypy hook creates its own
+  # isolated env and would force us to maintain `additional_dependencies`
+  # in lockstep with pyproject.toml — easy to forget, slow to debug
+  # (the failure looks like "Cannot find implementation or library stub
+  # for module named X" after a new dep is added).
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies:
-          - pydantic>=2
-          - types-pyyaml
-        args: [--config-file=pyproject.toml]
+        name: mypy (project venv)
+        entry: uv run mypy
+        language: system
+        types: [python]
         files: ^src/
+        pass_filenames: false
+        args: [src]
 
   # Pre-push: full-repo gate that mirrors what CI checks. Catches the
   # "I forgot to stage file X" failure mode that ordinary pre-commit

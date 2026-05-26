@@ -63,15 +63,7 @@ jobs:
       - name: Schema-evolution tests
         # Per ADR-015, every upstream-data milestone has a test that proves
         # projection tolerates new upstream fields. This job runs them as a
-        # separate gate so they never get silently skipped. Until M02 lands
-        # the first real upstream client, pytest collects zero tests and
-        # exits 5 — treat that as success, fail on anything else.
-        run: |
-          set +e
-          uv run pytest -m schema_evolution -ra
-          code=$?
-          set -e
-          if [ "$code" -eq 0 ] || [ "$code" -eq 5 ]; then
-            exit 0
-          fi
-          exit "$code"
+        # separate gate so they never get silently skipped — empty
+        # collection (exit 5) fails the build so the gate stays
+        # meaningful as more milestones land.
+        run: uv run pytest -m schema_evolution -ra
