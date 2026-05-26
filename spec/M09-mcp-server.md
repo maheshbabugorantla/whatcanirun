@@ -22,13 +22,13 @@ A FastMCP server exposing the public product surface. Stdio transport. Six tools
 1. **`list_catalog()`** → `{gpus, models, quantizations, workload_profiles, providers}`.
    One-call dropdown helper for clients building UIs.
 
-2. **`find_cheapest_deployment(model_slug, quant_slug?, batch_size=1, context_length=4096, region?, top_n=10)`** → ranked `list[CostCell]`.
+2. **`find_cheapest_deployment(model_slug, quant_slug?, batch_size=1, context_length=4096, region?, top_n=10)`** → `list[CostCell]` (the normal path) **OR** `UnknownModelResponse` (Case 3 of [Unknown model handling](#unknown-model-handling)).
    The basic price-comparison tool. No budget; just "what's cheapest for this op-point?"
 
-3. **`compare_deployment_modes(model_slug, gpu_slug, quant_slug, batch_size, context_length, workload_profile_slug)`** → `DeploymentComparison`.
+3. **`compare_deployment_modes(model_slug, gpu_slug, quant_slug, batch_size, context_length, workload_profile_slug)`** → `DeploymentComparison` (the normal path) **OR** `UnknownModelResponse` (Case 3, AND Case 2 — see "Tool-by-tool Case 2 behavior" below).
    Side-by-side of `cloud_gpu_rental` vs `hosted_api_token` for this op-point, with the inference-engineering-book §7.4.2 break-even framing.
 
-4. **`fit_check(model_slug, gpu_slug, quant_slug, tp_size, batch_size, context_length)`** → `FitResult` with trust envelope.
+4. **`fit_check(model_slug, gpu_slug, quant_slug, tp_size, batch_size, context_length)`** → `FitResult` with trust envelope (the normal path) **OR** `UnknownModelResponse` (Case 3, AND Case 2 — see "Tool-by-tool Case 2 behavior" below).
    Standalone wrapper over M06. Always populates `sufficiency_caveat`.
 
 5. **`budget_to_plan(budget_usd, model_slug, workload_profile_slug?, quant_slug?, top_n=3)`** → `list[BudgetPlanRow]` (the normal path) **OR** `UnknownModelResponse` (Case 3 of [Unknown model handling](#unknown-model-handling)).
@@ -44,7 +44,6 @@ A FastMCP server exposing the public product surface. Stdio transport. Six tools
        trust_envelope: TrustEnvelope          # includes availability_caveat
    ```
 
-Tools 2, 3, 4 also return their normal payload **OR** `UnknownModelResponse` per [Unknown model handling](#unknown-model-handling).
 
 6. **`resolve_model(model_slug, hf_repo_id)`** → `ResolveModelResult`.
    Persists the `(model_slug, hf_repo_id)` mapping to `~/.config/whatcanirun/user_models.yaml` and triggers `HfModelSync.sync_model(hf_repo_id)`. Used by MCP clients after they receive an `UnknownModelResponse` and elicit the `hf_repo_id` from the user.
@@ -145,6 +144,19 @@ Availability + trust:
   > "Architecture data not available for this model — only hosted-API pricing is shown. Fit-check and self-hosted throughput are not estimated. To enable full analysis, add an entry to your local `~/.config/whatcanirun/user_models.yaml` with the model's Hugging Face `repo_id`."
 
 The partial answer is honest — the user gets actionable pricing AND an explicit, named gap they can close themselves.
+
+#### Tool-by-tool Case 2 behavior
+
+Case 2's "partial CostCell" path is honest for tools that quote token economics (where hosted-API pricing IS the answer the user wants). It is dishonest for tools that fundamentally require architecture data — returning a degenerate `DeploymentComparison` or `FitResult` would invite the LLM client to relay something the server can't actually defend.
+
+| Tool | Case 2 behavior | Why |
+|---|---|---|
+| `find_cheapest_deployment` | partial `list[CostCell]` per the field map above (hosted_api_token rows only) | Token-only prices are usefully comparable across providers; cloud_gpu_rental rows are unavailable but explicitly absent |
+| `budget_to_plan` | partial `list[BudgetPlanRow]` wrapping the hosted_api_token CostCells | Same logic — token economics drives the budget math |
+| `compare_deployment_modes` | **`UnknownModelResponse`** (Case 2 collapses to Case 3 for this tool) | Its whole purpose is to compare cloud_gpu_rental vs hosted_api_token; without architecture data, the cloud side is impossible. A `DeploymentComparison` with `cloud_gpu_rental=None` would obscure the failure mode |
+| `fit_check` | **`UnknownModelResponse`** (Case 2 collapses to Case 3 for this tool) | Fit-checking requires architecture by definition |
+
+This is why `compare_deployment_modes` and `fit_check`'s signature lines (Public surface §3 and §4) cite both Case 2 and Case 3 as `UnknownModelResponse` triggers, while `find_cheapest_deployment` and `budget_to_plan` cite only Case 3.
 
 ### Case 3 — In NEITHER CP nor our tracked-models set (genuinely unknown)
 
