@@ -132,7 +132,7 @@ Used verbatim in code, tests, commit messages, PR titles, issue bodies.
 
 - **Cost cell** — `(gpu, provider, model, quant, deployment_mode, batch, ctx) → (hourly_usd, decode_tps, cost_per_m_output_usd, trust_envelope)`. Atomic output unit.
 - **Trust envelope** — `TrustEnvelope` Pydantic model. Required on every numerical tool response.
-- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`.
+- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `workload_assumption`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`. `workload_assumption` is only populated on responses that synthesize derived counts from a workload (e.g. `BudgetPlanRow.est_total_prompts`); omitted entirely otherwise. See the `ConfidenceDomain` Literal above for the per-domain semantics and the Calibration section for value ranges.
 - **Deployment mode** — `cloud_gpu_rental`, `hosted_api_token`. (v2 adds `on_prem` with `tco_treatment` subfield.) The earlier 5-mode taxonomy is deprecated.
 - **Op-point** — `(batch_size, context_length)` tuple.
 - **Fit check** — Pure-math VRAM verdict. Returns `FitResult` with `weight_gb`, `kv_cache_gb`, `framework_overhead_gb`, `headroom_gb`, `blocking_reasons`, `sufficiency_caveat`. Never just a bool.
@@ -155,7 +155,7 @@ whatcanirun/
 │   ├── inference/             # fit_check, tps_estimator (M06, M07)
 │   ├── plan/                  # budget_planner, cost_cells join (M08)
 │   ├── trust/                 # TrustEnvelope + per-tool builders
-│   └── mcp_tools/             # The 5 MCP tool definitions (M09)
+│   └── mcp_tools/             # The 6 MCP tool definitions (M09)
 ├── seeds/
 │   ├── gpus_supplement.yaml
 │   ├── quantizations.yaml

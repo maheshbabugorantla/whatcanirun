@@ -85,7 +85,7 @@ This server returns inference cost/fit/throughput plans for LLM workloads.
 
 Every numerical tool output includes a `trust_envelope` carrying:
 - sources (each upstream that contributed a number)
-- confidence_breakdown (per-domain: pricing, fit_check, throughput, model_architecture, gpu_specs, freshness)
+- confidence_breakdown (per-domain: pricing, fit_check, throughput, model_architecture, gpu_specs, workload_assumption, freshness — `workload_assumption` appears only on responses that synthesize derived counts from a workload profile, e.g. `BudgetPlanRow.est_total_prompts`; omit it entirely when no workload was assumed)
 - assumptions (what was held fixed)
 - caveats (what we explicitly do NOT model)
 - freshness (per-source last-updated timestamps)
@@ -97,6 +97,7 @@ When relaying tool output to the user:
 3. When `fit_result.fits == True`, ALSO surface `fit_result.sufficiency_caveat` — fits=True is necessary but not sufficient.
 4. When `pricing_type == "spot"`, mention that to the user. Spot pricing has preemption risk.
 5. ALWAYS mention `availability_caveat` on CostCell results. We do not model rentability, only pricing.
+6. When `confidence_breakdown.workload_assumption` is present, ALWAYS surface the assumed workload profile from `assumptions["workload_profile"]` (e.g. "this estimate assumes ~500 input + ~200 output tokens per prompt; if your prompts differ, the count scales accordingly"). A `workload_assumption` value < 0.5 means the server fell back to a default profile rather than the user picking — call that out and offer the elicitation alternatives.
 
 Adapt explanation depth to the user's apparent experience. A first-time renter needs the caveats spelled out; a power user needs them present but compact. Either way: never strip the envelope, never hide a caveat, never round a confidence value upward.
 
