@@ -11,7 +11,7 @@ Critical path = 8 weekends at ~6h each (~54h implementation-only). Plan for **75
 | # | Spec | Effort | Critical path | Status |
 |---|---|---|---|---|
 | M00 | [Bootstrap](M00-bootstrap.md) | 4h | ✓ | ✓ |
-| M01 | [Catalog supplements](M01-catalog-supplements.md) | 1h | ✓ | ⬜ |
+| M01 | [Catalog supplements](M01-catalog-supplements.md) | 1h | ✓ | ✓ |
 | M02 | [ComputePrices client](M02-computeprices-client.md) | 4h | ✓ | ⬜ |
 | M03 | [Hugging Face model sync](M03-hf-model-sync.md) | 4h | ✓ | ⬜ |
 | M04 | [Artificial Analysis optional client](M04-aa-optional-client.md) | 4h | parallel | ⬜ |

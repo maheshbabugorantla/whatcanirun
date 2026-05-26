@@ -109,6 +109,26 @@ When multiple tiers match, lower number wins. When both Tier 1a and Tier 1b matc
 - [ ] v1 NEVER returns `source="own_measured"` — `seeds/benchmark_cells.parquet` validated to contain only `public_benchmark_anchor` rows (this is a fast test that scans the seed file)
 - [ ] `estimate_tps` is pure (no I/O); property-tested
 - [ ] Reasoning effort dimension respected when AA has the variant rows
+- [ ] Carry-forward from M01 retired: backfill `fp8_tflops_dense` (and `fp4_tflops_dense` where applicable) in `seeds/gpus_supplement.yaml` for the 7 GPUs left null at M01 ship (h100nvl, b100, b200, gb200, gb300, l40, mi300x). See [M01 carry-forward](#m01-carry-forward) below.
+
+---
+
+## M01 carry-forward
+
+M01 shipped `seeds/gpus_supplement.yaml` with 7 of 12 rows carrying `fp8_tflops_dense: null` (and `fp4_tflops_dense: null` for the Blackwell rows) because the dense per-GPU value was not directly cited on the vendor page we could read at capture time. M07's bandwidth heuristic does not currently use these fields, so the trust contract holds — Tier 3 only reads `memory_bandwidth_gb_s` from ComputePrices. But:
+
+- Any compute-bound regime check (peak `tps_compute = fp_tflops * 1e12 / (2 * total_params * bits_per_weight / 8)`) added during M07 implementation MUST treat null as "compute bound unknown — fall back to bandwidth-only" rather than crashing or silently substituting a default.
+- Before M07 merges, backfill the 7 deferred rows from the canonical vendor whitepapers below. Update `seeds/gpus_supplement.yaml` directly; the round-trip test in `tests/catalog/test_round_trip.py` guards against silent default drift.
+
+| slug | whitepaper / brief to consult |
+|---|---|
+| `h100nvl` | NVIDIA H100 NVL product brief (94GB / 400W variant) |
+| `b100` | NVIDIA Blackwell architecture whitepaper, B100 SKU table |
+| `b200` | NVIDIA Blackwell architecture whitepaper, B200 SKU table |
+| `gb200` | NVIDIA Grace-Blackwell GB200 whitepaper, per-GPU dense |
+| `gb300` | NVIDIA Blackwell Ultra whitepaper (when published) |
+| `l40` | NVIDIA L40 datasheet PDF (not the L40S page) |
+| `mi300x` | AMD Instinct MI300X datasheet PDF |
 
 ---
 
