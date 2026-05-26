@@ -1,4 +1,4 @@
-# M09 — MCP Server (5 tools, 2 resources, 1 prompt)
+# M09 — MCP Server (6 tools, 2 resources, 1 prompt)
 
 **Status:** ⬜ Not started
 **Effort:** 10h (12h realistic with prompt + instructions polish)
@@ -11,7 +11,7 @@
 
 ## Goal
 
-A FastMCP server exposing the public product surface. Stdio transport. Five tools, two resources, one prompt. The `FastMCP.instructions` string is the single most important piece of prose in the whole project — it's what makes the LLM client speak in trust-contract-respecting voice without further training.
+A FastMCP server exposing the public product surface. Stdio transport. Six tools, two resources, one prompt. The `FastMCP.instructions` string is the single most important piece of prose in the whole project — it's what makes the LLM client speak in trust-contract-respecting voice without further training.
 
 ---
 
@@ -194,7 +194,7 @@ The merging is M03's responsibility — see `spec/M03-hf-model-sync.md` § "User
 ## Acceptance criteria
 
 - [ ] `whatcanirun-mcp` starts, completes MCP handshake, advertises capabilities.
-- [ ] All 5 tools callable; smoke-tested via fixtures (no live network in CI).
+- [ ] All 6 tools callable; smoke-tested via fixtures (no live network in CI).
 - [ ] Every tool response has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`.
 - [ ] `confidence == min(confidence_breakdown.values())` enforced by a property test on TrustEnvelope construction.
 - [ ] Unknown-model dispatcher covers all three cases (lazy-sync, partial-answer, interactive elicitation) with named caveats. `resolve_model(model_slug, hf_repo_id)` persists user-supplied pairs to `~/.config/whatcanirun/user_models.yaml`, not `seeds/tracked_models.yaml`.
@@ -220,6 +220,6 @@ The merging is M03's responsibility — see `spec/M03-hf-model-sync.md` § "User
 ## When done
 
 Commit:
-> `M09: MCP server with 5 tools, 2 resources, 1 prompt, trust-contract instructions`
+> `M09: MCP server with 6 tools, 2 resources, 1 prompt, trust-contract instructions`
 
 Mark M09 ✓ in `INDEX.md`. Continue with M10 (parallel) or M11.
