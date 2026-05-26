@@ -277,6 +277,36 @@ class ComputePricesClient:
     def _snapshots_dir(self, endpoint: str) -> Path:
         return self.cache_dir / f"{endpoint}.snapshots"
 
+    def _read_most_recent_valid_snapshot(self, endpoint: str) -> dict[str, Any] | None:
+        """Walk `<endpoint>.snapshots/` newest-first, return the first
+        snapshot whose contents validate against the same shape check
+        used for `_read_cache`. Returns None if no snapshots exist or
+        every snapshot is unreadable.
+
+        Used by the upstream-down fallback path so the 30-day rolling
+        snapshot history (ADR-013) actually delivers on its promised
+        role as fallback storage — not just an audit artifact.
+        """
+        snapshots = self._snapshots_dir(endpoint)
+        if not snapshots.is_dir():
+            return None
+        # Files are named with sortable ISO timestamps; lexicographic
+        # reverse sort == newest-first.
+        for path in sorted(snapshots.iterdir(), reverse=True):
+            try:
+                with gzip.open(path, "rt") as f:
+                    decoded = json.load(f)
+            except (OSError, EOFError, json.JSONDecodeError):
+                # Corrupt snapshot — try the next-oldest.
+                continue
+            if (
+                isinstance(decoded, dict)
+                and "data" in decoded
+                and isinstance(decoded["data"], list)
+            ):
+                return decoded
+        return None
+
     def _write_snapshot(self, endpoint: str, payload: dict[str, Any]) -> Path:
         """Persist a gzipped snapshot per fetch.
 
@@ -339,21 +369,24 @@ class ComputePricesClient:
                 if not _is_retryable_http_error(exc):
                     # 4xx etc. — surface the real error to the caller.
                     raise
+                # Fallback order per ADR-013:
+                #   1. latest.json if present and valid
+                #   2. most-recent valid snapshot (rolling history)
+                #   3. ComputePricesUnavailable
                 if self._cache_path(endpoint).exists():
                     try:
                         payload = self._read_cache(endpoint)
-                    except ValueError as cache_exc:
-                        raise ComputePricesUnavailable(
-                            f"ComputePrices {endpoint!r} unreachable after "
-                            f"{self._retry_attempts} attempts and the cached "
-                            f"file at {self._cache_path(endpoint)} is "
-                            f"unusable: {cache_exc}"
-                        ) from exc
+                    except ValueError:
+                        # latest.json is unreadable; fall through to snapshots.
+                        payload = self._read_most_recent_valid_snapshot(endpoint)
                 else:
+                    payload = self._read_most_recent_valid_snapshot(endpoint)
+                if payload is None:
                     raise ComputePricesUnavailable(
                         f"ComputePrices {endpoint!r} unreachable after "
-                        f"{self._retry_attempts} attempts and no cached "
-                        f"snapshot exists at {self._cache_path(endpoint)}"
+                        f"{self._retry_attempts} attempts and no usable "
+                        f"latest.json or snapshot exists under "
+                        f"{self._cache_path(endpoint).parent}"
                     ) from exc
             else:
                 self._write_cache(endpoint, payload)

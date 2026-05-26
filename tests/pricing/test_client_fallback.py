@@ -16,7 +16,10 @@ per fallback test on real exponential backoff sleeps.
 
 from __future__ import annotations
 
+import datetime as dt
+import gzip
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -165,16 +168,152 @@ def _seed_cache_file(cache_dir: Path, endpoint: str, contents: str) -> None:
     (cache_dir / f"{endpoint}.latest.json").write_text(contents)
 
 
+def _seed_snapshot(
+    cache_dir: Path,
+    endpoint: str,
+    ts: dt.datetime,
+    payload: dict[str, Any],
+) -> Path:
+    """Write a valid gzipped snapshot with the given mtime."""
+    snapshots = cache_dir / f"{endpoint}.snapshots"
+    snapshots.mkdir(parents=True, exist_ok=True)
+    name = ts.strftime("%Y-%m-%dT%H-%M-%SZ") + ".json.gz"
+    path = snapshots / name
+    with gzip.open(path, "wt") as f:
+        json.dump(payload, f)
+    os.utime(path, (ts.timestamp(), ts.timestamp()))
+    return path
+
+
+# --------------------------------------------------- snapshot walk-fallback
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_outage_falls_back_to_snapshot_when_latest_missing(
+    cache_dir: Path, fast_client: ComputePricesClient
+) -> None:
+    """ADR-013 promises a 30-day rolling snapshot history. When
+    upstream is down and `latest.json` doesn't exist (e.g. the cache
+    dir was rebuilt but snapshots were preserved), the client must
+    walk the snapshot directory and serve the most-recent one rather
+    than raising ComputePricesUnavailable."""
+    payload = _payload("cp_gpus_2026-05-26.json")
+    ts = dt.datetime(2026, 5, 24, 0, 0, 0, tzinfo=dt.UTC)
+    _seed_snapshot(cache_dir, "gpus", ts, payload)
+
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
+
+    rows = await fast_client.get_gpu_catalog()
+    assert len(rows) == 66
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_outage_falls_back_to_snapshot_when_latest_corrupt(
+    cache_dir: Path, fast_client: ComputePricesClient
+) -> None:
+    """If latest.json is unreadable AND a valid snapshot exists, the
+    snapshot is what we serve. The snapshot is the more durable
+    record."""
+    payload = _payload("cp_gpus_2026-05-26.json")
+    _seed_cache_file(cache_dir, "gpus", "{not valid json")
+    _seed_snapshot(cache_dir, "gpus", dt.datetime(2026, 5, 24, 0, 0, 0, tzinfo=dt.UTC), payload)
+
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
+
+    rows = await fast_client.get_gpu_catalog()
+    assert len(rows) == 66
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_outage_picks_most_recent_snapshot(
+    cache_dir: Path, fast_client: ComputePricesClient
+) -> None:
+    """Multiple snapshots present — newest valid one wins."""
+    fresh_payload = _payload("cp_gpus_2026-05-26.json")
+    # Older snapshot carries a different fingerprint so we can tell
+    # which one the client picked.
+    older_payload = {
+        "data": [{**fresh_payload["data"][0], "slug": "OLD-MARKER"}],
+        "meta": fresh_payload.get("meta", {}),
+    }
+
+    _seed_snapshot(
+        cache_dir,
+        "gpus",
+        dt.datetime(2026, 5, 20, 0, 0, 0, tzinfo=dt.UTC),
+        older_payload,
+    )
+    _seed_snapshot(
+        cache_dir,
+        "gpus",
+        dt.datetime(2026, 5, 24, 0, 0, 0, tzinfo=dt.UTC),
+        fresh_payload,
+    )
+
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
+
+    rows = await fast_client.get_gpu_catalog()
+    assert "OLD-MARKER" not in {r.slug for r in rows}
+    assert len(rows) == 66
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_outage_skips_corrupt_snapshot_to_next_oldest(
+    cache_dir: Path, fast_client: ComputePricesClient
+) -> None:
+    """A corrupt newest snapshot must not block fallback — the walk
+    keeps going to the next-oldest valid snapshot."""
+    payload = _payload("cp_gpus_2026-05-26.json")
+    # Newer snapshot is corrupt (gzipped garbage); next one is valid.
+    snapshots = cache_dir / "gpus.snapshots"
+    snapshots.mkdir(parents=True)
+    bad_ts = dt.datetime(2026, 5, 25, 0, 0, 0, tzinfo=dt.UTC)
+    bad_path = snapshots / f"{bad_ts.strftime('%Y-%m-%dT%H-%M-%SZ')}.json.gz"
+    bad_path.write_bytes(b"not actually gzipped json")
+    os.utime(bad_path, (bad_ts.timestamp(), bad_ts.timestamp()))
+
+    _seed_snapshot(cache_dir, "gpus", dt.datetime(2026, 5, 20, 0, 0, 0, tzinfo=dt.UTC), payload)
+
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
+
+    rows = await fast_client.get_gpu_catalog()
+    assert len(rows) == 66
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_corrupt_cache_during_outage_raises_unavailable(
     cache_dir: Path, fast_client: ComputePricesClient
 ) -> None:
-    """If upstream is down AND the cached file exists but is corrupt,
-    the client must raise ComputePricesUnavailable — not surface a raw
-    JSONDecodeError or shape ValueError to callers, which would leak
-    implementation detail and break the trust envelope contract."""
+    """If upstream is down AND latest.json is corrupt AND no snapshots
+    exist, the client must raise ComputePricesUnavailable — not surface
+    a raw JSONDecodeError or shape ValueError to callers."""
     _seed_cache_file(cache_dir, "gpus", "{not valid json")
+
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
+
+    with pytest.raises(ComputePricesUnavailable):
+        await fast_client.get_gpu_catalog()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_outage_with_only_corrupt_snapshots_raises_unavailable(
+    cache_dir: Path, fast_client: ComputePricesClient
+) -> None:
+    snapshots = cache_dir / "gpus.snapshots"
+    snapshots.mkdir(parents=True)
+    for ts in (
+        dt.datetime(2026, 5, 25, 0, 0, 0, tzinfo=dt.UTC),
+        dt.datetime(2026, 5, 24, 0, 0, 0, tzinfo=dt.UTC),
+    ):
+        p = snapshots / f"{ts.strftime('%Y-%m-%dT%H-%M-%SZ')}.json.gz"
+        p.write_bytes(b"corrupt")
+        os.utime(p, (ts.timestamp(), ts.timestamp()))
 
     respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
 
