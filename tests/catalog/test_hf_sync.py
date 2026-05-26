@@ -80,9 +80,43 @@ async def test_first_sync_fetches_from_hf_then_caches(
     assert model.hf_revision_sha == sha
     assert model.n_kv_heads == 8
 
-    # Cache file written.
+    # Projection cache file written.
     cache_file = cache_dir / "huggingface" / "llama-3-3-70b.model.json"
     assert cache_file.exists()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_first_sync_persists_raw_config_per_adr_015(
+    cache_dir: Path, llama_config: dict[str, Any]
+) -> None:
+    """ADR-015 invariant #2: every upstream API response is persisted to
+    disk verbatim BEFORE parsing. The raw config.json must exist on
+    disk after sync, not just the typed projection."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc123"
+
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    await sync.sync_model(
+        repo_id=repo_id,
+        slug="llama-3-3-70b",
+        display_name="Llama 3.3 70B Instruct",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    raw_cache_file = cache_dir / "huggingface" / "llama-3-3-70b.config.json"
+    assert raw_cache_file.exists()
+    on_disk = json.loads(raw_cache_file.read_text())
+    # Verbatim — same dict the HF endpoint returned, before any projection.
+    assert on_disk == llama_config
 
 
 # --------------------------------------------------- cache hit on same revision

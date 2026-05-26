@@ -80,6 +80,13 @@ class HfModelSync:
                 return Model.model_validate(cached)
 
         raw_config = await self._fetch_config(repo_id, sha)
+        # ADR-015 invariant #2: persist the raw upstream response verbatim
+        # BEFORE parsing, so a future projection bug or schema-evolution
+        # check can re-read the exact bytes HF returned. The projection
+        # (Model JSON) is also cached so cache-hit reads are fast.
+        self._hf_dir.mkdir(parents=True, exist_ok=True)
+        self._write_atomic(self._raw_path(slug), json.dumps(raw_config))
+
         model = Model.from_hf_config(
             slug=slug,
             hf_repo_id=repo_id,
@@ -98,16 +105,22 @@ class HfModelSync:
             # would silently mis-classify MLA models.
             kv_cache_strategy=kv_cache_strategy_override,
         )
-        self._hf_dir.mkdir(parents=True, exist_ok=True)
-        # Atomic write per the same tmp+rename pattern M02 uses for its
-        # cache files, so a crash mid-write can't leave a half-written
-        # JSON that the next call would refuse to parse.
-        tmp = cache_path.with_suffix(cache_path.suffix + ".tmp")
-        tmp.write_text(model.model_dump_json())
-        tmp.replace(cache_path)
+        self._write_atomic(cache_path, model.model_dump_json())
         return model
 
     # --------------------------------------------------------------- internals
+
+    def _raw_path(self, slug: str) -> Path:
+        """Path to the verbatim HF config.json cache for `slug` (ADR-015)."""
+        return self._hf_dir / f"{slug}.config.json"
+
+    @staticmethod
+    def _write_atomic(path: Path, contents: str) -> None:
+        """Tmp + rename so a crash mid-write can't leave a half-written
+        file that the next read would refuse to parse."""
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(contents)
+        tmp.replace(path)
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}
