@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import gzip
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,14 @@ class ComputePricesClient:
         snapshot_retention: dt.timedelta = dt.timedelta(days=30),
     ) -> None:
         self.cache_dir = cache_dir
+        # When the caller doesn't pass an explicit api_key, fall back to
+        # COMPUTEPRICES_API_KEY from the environment. An empty string is
+        # treated as "no key" so CI's deliberate `COMPUTEPRICES_API_KEY=""`
+        # safeguard keeps test runs anonymous instead of sending a
+        # malformed `Authorization: Bearer ` header.
+        if api_key is None:
+            env_key = os.environ.get("COMPUTEPRICES_API_KEY", "").strip()
+            api_key = env_key or None
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s

@@ -137,6 +137,59 @@ async def test_omits_authorization_when_anonymous(cache_dir: Path) -> None:
     assert "authorization" not in {h.lower() for h in route.calls.last.request.headers}
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_api_key_defaults_to_env_var(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When `api_key` is not passed, the client reads
+    `COMPUTEPRICES_API_KEY` from the environment so the documented auth
+    contract matches the implementation."""
+    monkeypatch.setenv("COMPUTEPRICES_API_KEY", "cp_live_from_env")
+    payload = _payload("cp_gpus_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
+
+    client = ComputePricesClient(cache_dir=cache_dir)  # no api_key kwarg
+    await client.get_gpu_catalog()
+
+    assert route.calls.last.request.headers.get("authorization") == "Bearer cp_live_from_env"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_explicit_api_key_overrides_env_var(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicit `api_key` ctor arg wins over the environment, so
+    tests / multi-tenant callers can override the default."""
+    monkeypatch.setenv("COMPUTEPRICES_API_KEY", "cp_live_from_env")
+    payload = _payload("cp_gpus_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
+
+    client = ComputePricesClient(cache_dir=cache_dir, api_key="cp_live_explicit")
+    await client.get_gpu_catalog()
+
+    assert route.calls.last.request.headers.get("authorization") == "Bearer cp_live_explicit"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_empty_env_var_is_treated_as_unset(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI sets `COMPUTEPRICES_API_KEY=""` deliberately so that test
+    runs can't accidentally hit upstream with a leaked production key.
+    Empty must mean anonymous, not literally `Authorization: Bearer `."""
+    monkeypatch.setenv("COMPUTEPRICES_API_KEY", "")
+    payload = _payload("cp_gpus_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    await client.get_gpu_catalog()
+
+    assert "authorization" not in {h.lower() for h in route.calls.last.request.headers}
+
+
 # ---------------------------------------------------------------- raw passthrough
 
 
