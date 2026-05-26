@@ -31,18 +31,21 @@ A FastMCP server exposing the public product surface. Stdio transport. Six tools
 4. **`fit_check(model_slug, gpu_slug, quant_slug, tp_size, batch_size, context_length)`** → `FitResult` with trust envelope (the normal path) **OR** `UnknownModelResponse` (Case 3, AND Case 2 — see "Tool-by-tool Case 2 behavior" below).
    Standalone wrapper over M06. Always populates `sufficiency_caveat`.
 
-5. **`budget_to_plan(budget_usd, model_slug, workload_profile_slug?, quant_slug?, top_n=3)`** → `list[BudgetPlanRow]` (the normal path) **OR** `UnknownModelResponse` (Case 3 of [Unknown model handling](#unknown-model-handling)).
+5. **`budget_to_plan(budget_usd, model_slug, workload_profile_slug?, quant_slug?, top_n=3)`** → `list[BudgetPlanRow]` (the normal path) **OR** `UnknownModelResponse` (Case 3 of [Unknown model handling](#unknown-model-handling)) **OR** `WorkloadElicitationResponse` (when `workload_profile_slug` is omitted — see [Workload assumption handling](#workload-assumption-handling)).
    **The headline tool.** Each row:
    ```python
    class BudgetPlanRow(BaseModel):
        cost_cell: CostCell
-       hours_available: float                 # budget_usd / hourly_usd
-       est_total_prompts: int                 # using workload profile
-       est_total_output_tokens: int
-       est_wallclock_minutes: float
+       hours_available: float | None          # budget_usd / hourly_usd; null for hosted_api_token
+       est_total_prompts: int                 # grounded in the active workload profile
+       est_total_output_tokens: int           # est_total_prompts × workload.avg_output_tokens
+       est_wallclock_minutes: float | None    # null when throughput is requires_measurement
        cost_per_m_output_usd: float
-       trust_envelope: TrustEnvelope          # includes availability_caveat
+       trust_envelope: TrustEnvelope          # `confidence_breakdown["workload_assumption"]`
+                                              # populated; `assumptions["workload_profile"]`
+                                              # names the profile this row is conditioned on.
    ```
+   Every `est_total_prompts` / `est_total_output_tokens` figure is conditioned on a workload profile — the trust envelope names which one explicitly via `confidence_breakdown["workload_assumption"]` and `assumptions["workload_profile"]`. See [Workload assumption handling](#workload-assumption-handling) for why this can never be silently defaulted.
 
 
 6. **`resolve_model(model_slug, hf_repo_id)`** → `ResolveModelResult`.
@@ -190,6 +193,61 @@ The MCP client surfaces `elicit_prompt` to the user. Two outcomes:
 
    Note that `UnknownModelResponse` deliberately does NOT carry a `trust_envelope`. Per the trust contract in `spec/SHARED.md`, only **numerical** tool responses must carry one (it wraps numbers with sources/confidence/caveats; an elicitation has no numbers to wrap). The "named gap" the trust contract requires is carried by `elicit_prompt` text and the absence of any numerical result — both are honest signals to the client that whatcanirun cannot help.
 
+## Workload assumption handling
+
+`budget_to_plan` synthesizes prompt-count and wallclock estimates by conditioning on a workload profile (`avg_input_tokens`, `avg_output_tokens` from M05). The number changes a lot with the assumed token counts — `chat_assistant` at 500/200 vs `batch_eval` at 2000/100 yields wildly different `est_total_prompts` for the same `budget_usd`. **The spec treats a missing workload as the same kind of problem as a missing model: the server elicits it rather than silently guessing.**
+
+### When the client omits `workload_profile_slug`
+
+`budget_to_plan` returns a `WorkloadElicitationResponse` instead of `list[BudgetPlanRow]`:
+
+```python
+class WorkloadElicitationResponse(BaseModel):
+    requested_model_slug: str
+    status: Literal["workload_required"] = "workload_required"
+    elicit_field: Literal["workload_profile_slug"] = "workload_profile_slug"
+    elicit_prompt: str = (
+        "To estimate prompt counts for your budget, I need to know what kind "
+        "of workload these prompts represent. Pick one:\n"
+        "- code_completion: short prompts (≈100 in, ≈50 out)\n"
+        "- chat_assistant: medium prompts (≈500 in, ≈200 out)\n"
+        "- batch_eval:    long prompts (≈2000 in, ≈100 out)\n"
+        "If none of those fit, ask me for `find_cheapest_deployment` instead — "
+        "it returns $/M figures so you can do the math against your own "
+        "token distribution."
+    )
+    available_profiles: list[str] = Field(
+        default_factory=lambda: ["code_completion", "chat_assistant", "batch_eval"]
+    )
+    suggested_followups: list[str] = Field(
+        default_factory=lambda: [
+            "budget_to_plan with workload_profile_slug='chat_assistant' for a starting estimate",
+            "find_cheapest_deployment (returns $/M figures, no prompt-count synthesis)",
+        ]
+    )
+```
+
+The MCP client surfaces `elicit_prompt` to the user. On reply:
+
+1. **User picks one of the three profile slugs** → client re-invokes `budget_to_plan(..., workload_profile_slug=<picked>)`. The retry returns normal `BudgetPlanRow`s with `confidence_breakdown["workload_assumption"] = 0.95` and `assumptions["workload_profile"] = <picked>` recording exactly what was assumed.
+
+2. **User wants prices without a profile** → client switches to `find_cheapest_deployment` (which returns CostCells with `$/M_input`, `$/M_output`, no prompt-count synthesis, and no `workload_assumption` in the trust envelope's breakdown). The user does the multiplication themselves.
+
+`WorkloadElicitationResponse` does NOT carry a `trust_envelope` — same logic as `UnknownModelResponse` and `ResolveModelResult`. It's an elicitation, not a numerical output; there are no numbers to wrap.
+
+### Why a silent default isn't acceptable
+
+The earlier draft of M09 had `workload_profile_slug?` as optional with an implicit default. That hides hearsay: the user gets `est_total_prompts = 22000` without knowing the number was computed against a `chat_assistant`-shaped prompt distribution they may or may not match. With the `workload_assumption` confidence domain now landed in `spec/SHARED.md`, a silent default would set `confidence_breakdown["workload_assumption"] = 0.2` and drag the top-level confidence to 0.2 by min-rollup — at which point the FastMCP instructions string would force the LLM client to relay the low score anyway. Eliciting up-front is the same answer, expressed in the API instead of as a runtime quality signal.
+
+### Tool-by-tool workload requirement
+
+| Tool | Needs workload? | Behavior when missing |
+|---|---|---|
+| `find_cheapest_deployment` | no — returns CostCells with $/M figures | n/a |
+| `compare_deployment_modes` | yes — signature already requires `workload_profile_slug` | hard schema error from the MCP layer; no elicitation needed |
+| `fit_check` | no — purely architectural | n/a |
+| `budget_to_plan` | yes — synthesizes prompt counts | `WorkloadElicitationResponse` |
+
 ### The merged tracked-models set
 
 Throughout this section "the tracked-models set" means the union of:
@@ -220,6 +278,7 @@ The merging is M03's responsibility — see `spec/M03-hf-model-sync.md` § "User
     - in neither → return `UnknownModelResponse` (Case 3, first call)
     - `resolve_model(model_slug, hf_repo_id)` → persists to `~/.config/whatcanirun/user_models.yaml` + invokes M03 sync; subsequent calls go through Case 1.
     Tested with stubbed HF responses; no live network in CI.
+13. **Slice M: Workload-assumption dispatcher** — `budget_to_plan` returns `WorkloadElicitationResponse` when `workload_profile_slug` is omitted; populates `confidence_breakdown["workload_assumption"] = 0.95` and `assumptions["workload_profile"]` on the retry; trust envelope construction adds the new domain (SHARED.md update). Tests: missing slug → elicitation; supplied slug → normal `BudgetPlanRow`s with the domain populated; `find_cheapest_deployment` omits the key from `confidence_breakdown` (no derived prompt count).
 
 ---
 
@@ -227,7 +286,8 @@ The merging is M03's responsibility — see `spec/M03-hf-model-sync.md` § "User
 
 - [ ] `whatcanirun-mcp` starts, completes MCP handshake, advertises capabilities.
 - [ ] All 6 tools callable; smoke-tested via fixtures (no live network in CI).
-- [ ] Every **numerical** tool response (and every CostCell / BudgetPlanRow / FitResult / DeploymentComparison contained in one) has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`. Non-numerical responses (`UnknownModelResponse`, `ResolveModelResult`) do not carry one — per `spec/SHARED.md`, the trust envelope wraps numbers; an elicitation or a status/diagnostic response has none to wrap.
+- [ ] Every **numerical** tool response (and every CostCell / BudgetPlanRow / FitResult / DeploymentComparison contained in one) has a populated `trust_envelope` covering every applicable domain in `confidence_breakdown` (`workload_assumption` is required only on responses that synthesize a derived count from a workload — i.e. `BudgetPlanRow`s). Non-numerical responses (`UnknownModelResponse`, `ResolveModelResult`, `WorkloadElicitationResponse`) do not carry one — per `spec/SHARED.md`, the trust envelope wraps numbers; an elicitation or a status/diagnostic response has none to wrap.
+- [ ] `budget_to_plan` called without `workload_profile_slug` returns a `WorkloadElicitationResponse`, never a `BudgetPlanRow` with a silent default. The retry with `workload_profile_slug` set populates `confidence_breakdown["workload_assumption"] = 0.95` and `assumptions["workload_profile"]` on every row.
 - [ ] `confidence == min(confidence_breakdown.values())` enforced by a property test on TrustEnvelope construction.
 - [ ] Unknown-model dispatcher covers all three cases (lazy-sync, partial-answer, interactive elicitation) with named caveats. `resolve_model(model_slug, hf_repo_id)` persists user-supplied pairs to `~/.config/whatcanirun/user_models.yaml`, not `seeds/tracked_models.yaml`.
 - [ ] M03's `sync_all_tracked()` reads from BOTH `seeds/tracked_models.yaml` AND `~/.config/whatcanirun/user_models.yaml` (when present) — the merged-loader contract is part of M03's surface, not M09's; see `spec/M03-hf-model-sync.md` § "User-extension file".

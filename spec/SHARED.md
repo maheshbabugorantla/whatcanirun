@@ -38,6 +38,11 @@ ConfidenceDomain = Literal[
     "throughput",           # TpsEstimate.confidence for this cell
     "model_architecture",   # HF config.json freshness + family extraction success
     "gpu_specs",            # ComputePrices catalog completeness + supplement YAML coverage
+    "workload_assumption",  # how grounded the assumed (avg_input_tokens, avg_output_tokens)
+                            # are — user-elicited or argument-supplied = 0.95; silent default
+                            # = 0.2; omit the key when no workload assumption was made.
+                            # Only populated by tools that synthesize derived counts from a
+                            # workload (e.g. budget_to_plan's est_total_prompts).
     "freshness",            # weakest-link cache age across all contributing sources
 ]
 
@@ -64,6 +69,11 @@ A plan with `pricing=0.9, fit_check=0.85, throughput=0.0` (requires_measurement)
 - `bandwidth_heuristic_single_stream`: 0.6 — batch=1 only
 - `requires_measurement`: 0.0 — no number returned at all
 - `datasheet_yaml` for GPU specs domain: 0.99 — facts
+- `workload_assumption` domain:
+  - user explicitly supplied custom `avg_input_tokens` + `avg_output_tokens`: 1.0
+  - user elicited a `workload_profile_slug` (interactive flow) OR client passed it as a tool argument: 0.95
+  - server fell back to a silent default profile: 0.2  ← intentionally low so `confidence = min(...)` forces the LLM client to relay that the prompt count is hearsay
+  - tool returned no derived prompt count (e.g. `find_cheapest_deployment`): omit the `workload_assumption` key entirely
 
 **No throughput number returns confidence > 0.95 unless it came from `own_measured_benchmark`.** GPU specs (different domain) can reach 0.99.
 
