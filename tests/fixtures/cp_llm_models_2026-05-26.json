@@ -1,0 +1,2701 @@
+{
+  "data": [
+    {
+      "context_window": null,
+      "creator": "BAAI",
+      "family": null,
+      "id": "33148bf7-cfad-4c9c-b313-ff668bf75e88",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "BAAI bge-large-en-v1.5",
+      "slug": "bge-large-en-v1-5"
+    },
+    {
+      "context_window": null,
+      "creator": "BAAI",
+      "family": null,
+      "id": "0345bb85-0ab3-4f45-a7a4-b77a1cfdac94",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "BAAI bge-m3",
+      "slug": "bge-m3"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Haiku",
+      "id": "da122a86-0e13-40fd-994e-45a96d939e5a",
+      "knowledge_cutoff": "2024-04-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude 3.5 Haiku",
+      "slug": "claude-3-5-haiku"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Sonnet",
+      "id": "471d547a-9a55-4237-96d7-e657f56dd6b8",
+      "knowledge_cutoff": "2024-04-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude 3.5 Sonnet",
+      "slug": "claude-3-5-sonnet"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Sonnet",
+      "id": "70a08c22-f890-46de-8417-eafbed491cf1",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude 3.7 Sonnet",
+      "slug": "claude-3-7-sonnet"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Haiku",
+      "id": "21a8e738-256f-45e0-8efa-1ab68419a648",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude 3 Haiku",
+      "slug": "claude-3-haiku"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Opus",
+      "id": "ef26711c-d763-4771-a533-e4a2152972da",
+      "knowledge_cutoff": "2023-08-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude 3 Opus",
+      "slug": "claude-3-opus"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Haiku",
+      "id": "39bd2d42-5044-4dcf-a6cd-533eed9ac28f",
+      "knowledge_cutoff": "2025-02-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Haiku 4.5",
+      "slug": "claude-haiku-4-5"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Opus",
+      "id": "7c5a53dc-da5a-41cd-8a86-25c801ae6c52",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Opus 4.1",
+      "slug": "claude-opus-4-1"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Opus",
+      "id": "9d83598f-d4ab-408d-9c4c-7159337a3a72",
+      "knowledge_cutoff": "2025-05-20",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Opus 4.5",
+      "slug": "claude-opus-4-5"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Opus",
+      "id": "8feda6d7-c6bf-4b87-90ae-863d1df09cc8",
+      "knowledge_cutoff": "2025-05-20",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Opus 4.6",
+      "slug": "claude-opus-4-6"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Claude 4",
+      "id": "499366d9-e27d-4b5b-9d23-9ad1ad4bd803",
+      "knowledge_cutoff": "2026-01-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Opus 4.7",
+      "slug": "claude-opus-4-7"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Anthropic",
+      "family": "Sonnet",
+      "id": "7b82ffca-e354-47c4-a4ed-7d4cfc4217be",
+      "knowledge_cutoff": "2025-01-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Sonnet 4.5",
+      "slug": "claude-sonnet-4-5"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Anthropic",
+      "family": "Claude 4",
+      "id": "7e425a85-4ee8-4d59-b8f3-fcdc290a5de5",
+      "knowledge_cutoff": "2025-08-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Claude Sonnet 4.6",
+      "slug": "claude-sonnet-4-6"
+    },
+    {
+      "context_window": 256000,
+      "creator": "Mistral",
+      "family": "Codestral",
+      "id": "5b225456-eee5-4dee-9be0-5955ea03e09d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Codestral 25.08",
+      "slug": "codestral-2508"
+    },
+    {
+      "context_window": null,
+      "creator": "Cohere",
+      "family": null,
+      "id": "b9ce8df0-8ab7-4e83-91f9-f6b51e7c397f",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Cohere Embed v3",
+      "slug": "cohere-embed-v3"
+    },
+    {
+      "context_window": null,
+      "creator": "Cohere",
+      "family": null,
+      "id": "45acd165-bc6c-4a66-a003-9cf8a4c033ef",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Cohere Rerank v3",
+      "slug": "cohere-rerank-v3"
+    },
+    {
+      "context_window": 256000,
+      "creator": "Cohere",
+      "family": "Command",
+      "id": "1c46aecb-0dbc-4b20-a320-37659adff289",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Command A",
+      "slug": "command-a"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Cohere",
+      "family": "Command",
+      "id": "4164e83f-2bf7-4202-96b0-f8677ba59693",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Command R",
+      "slug": "command-r"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Cohere",
+      "family": "Command",
+      "id": "046924f9-9127-4b49-bb84-e93f682427de",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Command R7B",
+      "slug": "command-r7b"
+    },
+    {
+      "context_window": 16000,
+      "creator": "DeepSeek",
+      "family": "DeepSeek",
+      "id": "7119ee6c-c9b4-4e79-a9fc-df63927c57f0",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "DeepSeek Coder 33B",
+      "slug": "deepseek-coder-33b"
+    },
+    {
+      "context_window": 64000,
+      "creator": "DeepSeek",
+      "family": "DeepSeek",
+      "id": "48402b07-8512-40db-9fff-2d370c72a1d4",
+      "knowledge_cutoff": "2024-11-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "DeepSeek R1",
+      "slug": "deepseek-r1"
+    },
+    {
+      "context_window": 64000,
+      "creator": "DeepSeek",
+      "family": "DeepSeek",
+      "id": "83b208b8-5dbf-4f90-a1f5-830a115ab704",
+      "knowledge_cutoff": "2024-06-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "DeepSeek V3",
+      "slug": "deepseek-v3"
+    },
+    {
+      "context_window": 32768,
+      "creator": "DeepSeek",
+      "family": "DeepSeek",
+      "id": "509944cc-f64e-491c-8dc4-63b211cb100c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "DeepSeek V3.1",
+      "slug": "deepseek-v3-1"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "DeepSeek",
+      "family": "DeepSeek V4",
+      "id": "2687a7b7-ee13-4214-8639-927e5dcc5f70",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "DeepSeek V4 Flash",
+      "slug": "deepseek-v4-flash"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "DeepSeek",
+      "family": "DeepSeek V4",
+      "id": "16a9cbcc-0dc0-493b-a2dd-61d954a05882",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "DeepSeek V4 Pro",
+      "slug": "deepseek-v4-pro"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Mistral",
+      "family": "Devstral",
+      "id": "c5be7a31-15d7-4281-b54c-40e6fd508029",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Devstral 2 123B",
+      "slug": "devstral-2-123b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Devstral",
+      "id": "7ee776c0-680a-4178-8e03-2b67deb7d4fc",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Devstral Medium",
+      "slug": "devstral-medium"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Devstral",
+      "id": "f50b3e67-12eb-4059-84f4-8b433705d21d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Devstral Small",
+      "slug": "devstral-small"
+    },
+    {
+      "context_window": null,
+      "creator": "ElevenLabs",
+      "family": null,
+      "id": "3fd9589c-f9f0-453c-a2c6-130e3ab65a80",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "ElevenLabs Multilingual v2",
+      "slug": "eleven-multilingual-v2"
+    },
+    {
+      "context_window": 120000,
+      "creator": "Baidu",
+      "family": "ERNIE",
+      "id": "96ed0a67-8831-45b6-906c-ef43a6bc699f",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "ERNIE 4.5 21B",
+      "slug": "ernie-4-5-21b-a3b"
+    },
+    {
+      "context_window": 123000,
+      "creator": "Baidu",
+      "family": "ERNIE",
+      "id": "ad68b04b-98b8-4bcf-a7f8-0c973ade9245",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "ERNIE 4.5 300B",
+      "slug": "ernie-4-5-300b-a47b"
+    },
+    {
+      "context_window": 30000,
+      "creator": "Baidu",
+      "family": "ERNIE",
+      "id": "8e759596-ed63-497f-84f6-999cf4192f2f",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "ERNIE 4.5 VL 28B",
+      "slug": "ernie-4-5-vl-28b-a3b"
+    },
+    {
+      "context_window": 123000,
+      "creator": "Baidu",
+      "family": "ERNIE",
+      "id": "43a3e789-6ae5-49cb-a876-73fe8cdd3537",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "ERNIE 4.5 VL 424B",
+      "slug": "ernie-4-5-vl-424b-a47b"
+    },
+    {
+      "context_window": null,
+      "creator": "Black Forest Labs",
+      "family": null,
+      "id": "96cb573c-a87b-4fc6-91ff-511916de2360",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "FLUX 1.1 Pro",
+      "slug": "flux-1-1-pro"
+    },
+    {
+      "context_window": null,
+      "creator": "Black Forest Labs",
+      "family": null,
+      "id": "5871254f-c047-42aa-9923-7fb453c9f7d2",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "FLUX 1 Dev",
+      "slug": "flux-1-dev"
+    },
+    {
+      "context_window": null,
+      "creator": "Black Forest Labs",
+      "family": null,
+      "id": "f55776d7-4055-4a1a-9103-cd7c9cfe8766",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "FLUX 1 Kontext Max",
+      "slug": "flux-1-kontext-max"
+    },
+    {
+      "context_window": null,
+      "creator": "Black Forest Labs",
+      "family": null,
+      "id": "ef64c5dc-853a-4533-8d7f-270cdeb6fb5e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "FLUX 1 Kontext Pro",
+      "slug": "flux-1-kontext-pro"
+    },
+    {
+      "context_window": null,
+      "creator": "Black Forest Labs",
+      "family": null,
+      "id": "9744db3b-70a4-4f88-99ed-9d8a449277e6",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "FLUX 1 Pro",
+      "slug": "flux-1-pro"
+    },
+    {
+      "context_window": null,
+      "creator": "Black Forest Labs",
+      "family": null,
+      "id": "694b2d21-1883-4ef6-a13e-19e7f584a4d7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "FLUX 1 Schnell",
+      "slug": "flux-1-schnell"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "a58c9187-6491-46b2-9325-00e4a5134506",
+      "knowledge_cutoff": "2024-08-01",
+      "modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "name": "Gemini 2.0 Flash",
+      "slug": "gemini-2-0-flash"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "f8709ce3-fa7a-4057-80c0-1b23d46d7957",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "name": "Gemini 2.5 Flash",
+      "slug": "gemini-2-5-flash"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "75312355-d5a2-497a-8bc2-67b98ead1611",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Gemini 2.5 Flash Lite",
+      "slug": "gemini-2-5-flash-lite"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "ecc0c696-bb6c-40ba-8d21-21588f40e5e5",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "name": "Gemini 2.5 Pro",
+      "slug": "gemini-2-5-pro"
+    },
+    {
+      "context_window": 65536,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "3ea0c3a4-02b7-4b96-b3bb-9d5b8746a233",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Gemini 3.1 Flash Image",
+      "slug": "gemini-3-1-flash-image"
+    },
+    {
+      "context_window": 1048576,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "60e8eecf-0a4f-4005-9f92-426038980129",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "name": "Gemini 3.1 Flash Lite",
+      "slug": "gemini-3-1-flash-lite"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "310505ce-9eab-40ed-a482-68f6b46b3c3c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "name": "Gemini 3.1 Pro",
+      "slug": "gemini-3-1-pro"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "a13de0e1-f2a4-4bab-9006-1a7d6a975cd7",
+      "knowledge_cutoff": "2025-06-01",
+      "modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "name": "Gemini 3 Flash",
+      "slug": "gemini-3-flash"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Google",
+      "family": "Gemini",
+      "id": "d8d659cf-f779-4b6a-95c1-733ac1447274",
+      "knowledge_cutoff": "2025-06-01",
+      "modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "name": "Gemini 3 Pro",
+      "slug": "gemini-3-pro"
+    },
+    {
+      "context_window": 8192,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "8ded559a-6b7b-437c-afb3-bb9c5663c6ef",
+      "knowledge_cutoff": "2024-02-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Gemma 2 27B",
+      "slug": "gemma-2-27b"
+    },
+    {
+      "context_window": 8192,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "2713f89d-1f48-4ca6-92d9-ec8391a023bd",
+      "knowledge_cutoff": "2024-02-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Gemma 2 9B",
+      "slug": "gemma-2-9b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "ea5b831e-543a-4809-81ea-0cfd28cdae66",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Gemma 3 12B",
+      "slug": "gemma-3-12b-it"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "98eab273-a1be-438d-85ea-52443c88a9e9",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Gemma 3 27B",
+      "slug": "gemma-3-27b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "5e8d2ede-1c3e-4c49-8650-9dc50761322f",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Gemma 3 4B",
+      "slug": "gemma-3-4b-it"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "5a604a40-8ab5-4ac6-b5fd-65931a238e00",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Gemma 4 26B",
+      "slug": "gemma-4-26b-a4b-it"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Google",
+      "family": "Gemma",
+      "id": "3bce81c7-82ed-4ad9-9011-600b5bd66a3d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Gemma 4 31B",
+      "slug": "gemma-4-31b-it"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Zhipu",
+      "family": "GLM",
+      "id": "09d5080e-f478-41d9-9ce8-609823a020e6",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GLM-4.5 Air",
+      "slug": "glm-4-5-air"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Zhipu",
+      "family": "GLM",
+      "id": "a75e237d-e000-448d-97c1-dbc0c0396cca",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GLM-4.6",
+      "slug": "glm-4-6"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Zhipu",
+      "family": "GLM",
+      "id": "a5387bf7-ee68-44f1-b9d3-aee69adcc513",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GLM-4.7",
+      "slug": "glm-4-7"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Zhipu",
+      "family": "GLM",
+      "id": "5dd5ff64-a6e1-42a9-a9c6-c8e58f9c7518",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GLM-5",
+      "slug": "glm-5"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Zhipu",
+      "family": "GLM-5",
+      "id": "d7303925-e692-48f6-a6ac-0fc939f3519d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GLM-5.1",
+      "slug": "glm-5-1"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "ded12509-033a-43f0-9391-1947dc4e0367",
+      "knowledge_cutoff": "2024-06-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-4.1",
+      "slug": "gpt-4-1"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "6124a5a1-f1d4-409d-b5dc-4c40b882c92b",
+      "knowledge_cutoff": "2024-06-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-4.1 mini",
+      "slug": "gpt-4-1-mini"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "1b40094d-787d-430e-92ef-e293b5d26a91",
+      "knowledge_cutoff": "2024-06-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-4.1 nano",
+      "slug": "gpt-4-1-nano"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "903733a6-6700-45ea-9fbf-38f12c2b9542",
+      "knowledge_cutoff": "2023-10-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-4o",
+      "slug": "gpt-4o"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "1a410d52-5d37-4efa-9697-18511efd7d2d",
+      "knowledge_cutoff": "2023-10-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-4o mini",
+      "slug": "gpt-4o-mini"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "6a386506-3b15-4531-9605-70f1dac5bc6b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GPT-4o Mini Realtime",
+      "slug": "gpt-4o-mini-realtime"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "94b663a8-0997-42a4-b339-62d3acf5e7df",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GPT-4o Realtime",
+      "slug": "gpt-4o-realtime"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "544f2b74-5c04-4771-99d2-efc70bd5af4b",
+      "knowledge_cutoff": "2024-12-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5",
+      "slug": "gpt-5"
+    },
+    {
+      "context_window": 256000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "27d56546-d5c8-4a9a-b1c2-6e09d8753e7d",
+      "knowledge_cutoff": "2025-03-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5.1",
+      "slug": "gpt-5-1"
+    },
+    {
+      "context_window": 400000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "0c9bfd29-e6c2-4533-9b0e-14bf5427e73d",
+      "knowledge_cutoff": "2025-06-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5.2",
+      "slug": "gpt-5-2"
+    },
+    {
+      "context_window": 400000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "ef622f0a-e822-4c5a-a521-a952f16086e5",
+      "knowledge_cutoff": "2025-06-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5.2 Pro",
+      "slug": "gpt-5-2-pro"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "12d67786-60cd-4743-8713-57af79976edf",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5.4",
+      "slug": "gpt-5-4"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "e7a36c8a-a754-4d2d-b8cc-cfb05d491f1a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5.4 Mini",
+      "slug": "gpt-5-4-mini"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "bf99ebf8-44ef-4ae4-b724-ce38d5af75bd",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "GPT-5.4 Nano",
+      "slug": "gpt-5-4-nano"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "921ce934-98e9-4879-842c-17055cfbcabe",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5.4 Pro",
+      "slug": "gpt-5-4-pro"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "183b9a98-2705-41bf-ae7c-0d77bfcc4cf2",
+      "knowledge_cutoff": "2024-12-01",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "GPT-5 mini",
+      "slug": "gpt-5-mini"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT",
+      "id": "42c95593-639a-4883-a5c1-fe91325ca7ee",
+      "knowledge_cutoff": "2024-12-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "GPT-5 Nano",
+      "slug": "gpt-5-nano"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT-OSS",
+      "id": "d86c1b1d-b7ee-4bb4-9ab5-690d8440c5f4",
+      "knowledge_cutoff": "2025-01-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "GPT-OSS-120B",
+      "slug": "gpt-oss-120b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT-OSS",
+      "id": "8ad524b9-9001-43ef-a5b9-35c0f5f71c09",
+      "knowledge_cutoff": "2025-01-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "GPT-OSS-20B",
+      "slug": "gpt-oss-20b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT Realtime",
+      "id": "e1a7e495-f1c8-4dc5-8101-231c38e7f7dd",
+      "knowledge_cutoff": "2024-10-01",
+      "modalities": [
+        "text",
+        "audio"
+      ],
+      "name": "GPT Realtime",
+      "slug": "gpt-realtime"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "GPT Realtime",
+      "id": "46bc8a27-77ba-4cde-b804-142c7dc0fb55",
+      "knowledge_cutoff": "2024-10-01",
+      "modalities": [
+        "text",
+        "audio"
+      ],
+      "name": "GPT Realtime mini",
+      "slug": "gpt-realtime-mini"
+    },
+    {
+      "context_window": 131000,
+      "creator": "IBM",
+      "family": "Granite",
+      "id": "5fc3c137-e14e-44f3-8f8c-160210e69888",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Granite 4.0 H Micro",
+      "slug": "granite-4-0-h-micro"
+    },
+    {
+      "context_window": 131072,
+      "creator": "xAI",
+      "family": "Grok",
+      "id": "f4578bdc-50ba-4308-af7b-cab7e9feb08e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Grok 3",
+      "slug": "grok-3"
+    },
+    {
+      "context_window": 131072,
+      "creator": "xAI",
+      "family": "Grok",
+      "id": "00dcec33-85a6-4ce0-b291-8e1a81273d49",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Grok 3 Mini",
+      "slug": "grok-3-mini"
+    },
+    {
+      "context_window": 256000,
+      "creator": "xAI",
+      "family": "Grok",
+      "id": "3ab5ab07-b72f-4a33-8333-3af6f639aaf2",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Grok 4",
+      "slug": "grok-4"
+    },
+    {
+      "context_window": 2000000,
+      "creator": "xAI",
+      "family": "Grok",
+      "id": "5edf2493-e981-463a-b087-101d7b829e1a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Grok 4.20",
+      "slug": "grok-4-20"
+    },
+    {
+      "context_window": 2000000,
+      "creator": "xAI",
+      "family": "Grok",
+      "id": "f24d07d1-bce0-4a40-b723-bc96cba0a128",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Grok 4 Fast",
+      "slug": "grok-4-fast"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Tencent",
+      "family": "Hunyuan",
+      "id": "783f0b56-164f-47e5-85a9-111dc1401e8d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Hunyuan A13B",
+      "slug": "hunyuan-a13b"
+    },
+    {
+      "context_window": null,
+      "creator": "Ideogram",
+      "family": null,
+      "id": "ea0af065-4c48-4376-9951-46f9bc0d8de4",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Ideogram v3 Quality",
+      "slug": "ideogram-v3-quality"
+    },
+    {
+      "context_window": null,
+      "creator": "Ideogram",
+      "family": null,
+      "id": "f7b7468a-2855-4c7e-99fc-3cc85208ba06",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Ideogram v3 Turbo",
+      "slug": "ideogram-v3-turbo"
+    },
+    {
+      "context_window": 256000,
+      "creator": "AI21",
+      "family": "Jamba",
+      "id": "c2b1a74c-6b6d-44c3-a0b9-777c74f72d0a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Jamba Large 1.7",
+      "slug": "jamba-large-1-7"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Moonshot",
+      "family": "Kimi",
+      "id": "d7025e8d-dd2f-409d-9d14-7e8c35f9e78e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Kimi K2",
+      "slug": "kimi-k2"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Moonshot",
+      "family": "Kimi",
+      "id": "942a5201-612c-4b0c-b9ef-db854e697957",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Kimi K2.5",
+      "slug": "kimi-k2-5"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "9741095b-4fc8-4c19-9182-b5bbc461f850",
+      "knowledge_cutoff": "2023-12-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.1 405B",
+      "slug": "llama-3-1-405b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "14355f7a-50b7-4d2d-8773-dc6c91d3f968",
+      "knowledge_cutoff": "2023-12-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.1 70B",
+      "slug": "llama-3-1-70b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "c9386311-7e5e-4fd5-8189-4a04df1b2be7",
+      "knowledge_cutoff": "2023-12-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.1 8B",
+      "slug": "llama-3-1-8b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "fb725912-9111-4e4b-8ccc-93e48df888ec",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.1 Nemotron 70B",
+      "slug": "llama-3-1-nemotron-70b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "1e932bf4-e7f1-4eeb-8a09-aa402155cd88",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.1 Nemotron Ultra 253B",
+      "slug": "llama-3-1-nemotron-ultra-253b-v1"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "113cf49b-0174-4a59-b24d-fa1c49d33d38",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Llama 3.2 11B Vision",
+      "slug": "llama-3-2-11b-vision"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "6c2336e2-3a4a-40ad-9122-43c4ab889a4e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.2 1B",
+      "slug": "llama-3-2-1b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "9e078e45-b8c6-4fe2-ab05-201e8a1fed66",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.2 3B",
+      "slug": "llama-3-2-3b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "16638a9c-641a-4602-9874-45e18d8b635c",
+      "knowledge_cutoff": "2024-03-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.3 70B",
+      "slug": "llama-3-3-70b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "d326d8da-7177-4b2e-bcea-e74606fa1c83",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3.3 Nemotron Super 49B",
+      "slug": "llama-3-3-nemotron-super-49b-v1-5"
+    },
+    {
+      "context_window": 8000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "3bbbed53-e78d-4cec-b85e-9dd336c01e65",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3 70B",
+      "slug": "llama-3-70b"
+    },
+    {
+      "context_window": 8000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "4dbeda91-1afb-4410-8ec4-15bb6f934384",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama 3 8B",
+      "slug": "llama-3-8b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "8272295e-4f52-40b0-8618-546fd01ff669",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Llama 4 Maverick 17B",
+      "slug": "llama-4-maverick-17b"
+    },
+    {
+      "context_window": 327680,
+      "creator": "Meta",
+      "family": "Llama",
+      "id": "aa5e8c99-6fc0-4e0f-81ac-55827c8793ae",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Llama 4 Scout",
+      "slug": "llama-4-scout"
+    },
+    {
+      "context_window": null,
+      "creator": "Meta",
+      "family": null,
+      "id": "3a5e6fe1-a2f1-4951-ad21-62e06f08be64",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Llama Guard 3",
+      "slug": "llama-guard-3"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Inception",
+      "family": "Mercury",
+      "id": "333da718-2c93-429f-a674-92d6dacad0c6",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mercury",
+      "slug": "mercury"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Inception",
+      "family": "Mercury",
+      "id": "f4940133-4548-496b-b158-f6a643778277",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mercury 2",
+      "slug": "mercury-2"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Inception",
+      "family": "Mercury",
+      "id": "485468f1-27da-423d-8e47-6cddb194e9e9",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mercury Coder",
+      "slug": "mercury-coder"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Xiaomi",
+      "family": "MiMo",
+      "id": "7a48c017-ac9b-4287-8bf2-24676b75c915",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "MiMo v2 Flash",
+      "slug": "mimo-v2-flash"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Xiaomi",
+      "family": "MiMo",
+      "id": "452b236d-08f4-42b2-937e-8845c5f1db19",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "name": "MiMo v2 Omni",
+      "slug": "mimo-v2-omni"
+    },
+    {
+      "context_window": 1048576,
+      "creator": "Xiaomi",
+      "family": "MiMo",
+      "id": "f3c1aa9d-3036-450f-b54d-5181c070f73c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "MiMo v2 Pro",
+      "slug": "mimo-v2-pro"
+    },
+    {
+      "context_window": 1000192,
+      "creator": "MiniMax",
+      "family": "MiniMax",
+      "id": "0dd5f2c6-faba-4139-940e-3299affbd2f3",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "MiniMax 01",
+      "slug": "minimax-01"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "MiniMax",
+      "family": "MiniMax",
+      "id": "51e65940-dda3-43d1-8f99-6f7b9288ab9c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "MiniMax M1",
+      "slug": "minimax-m1"
+    },
+    {
+      "context_window": 196608,
+      "creator": "MiniMax",
+      "family": "MiniMax",
+      "id": "b9df442e-f3dd-4cb5-89ac-a60c5f3cc3b7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "MiniMax M2.1",
+      "slug": "minimax-m2-1"
+    },
+    {
+      "context_window": 128000,
+      "creator": "MiniMax",
+      "family": "MiniMax",
+      "id": "f3ec1f99-cdc4-4c1d-b835-2e58d4eb4c5d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "MiniMax M2.5",
+      "slug": "minimax-m2-5"
+    },
+    {
+      "context_window": 204800,
+      "creator": "MiniMax",
+      "family": "MiniMax",
+      "id": "e68a4f70-077e-4b88-9655-f9492f077940",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "MiniMax M2.7",
+      "slug": "minimax-m2-7"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Mistral",
+      "family": "Ministral",
+      "id": "0d0c20cf-2322-4935-858f-24ca672e511d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Ministral 3 14B",
+      "slug": "ministral-3-14b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Ministral",
+      "id": "94eaf468-c0ea-49ca-ba82-323376d393b4",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Ministral 3B",
+      "slug": "ministral-3b-2512"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Mistral",
+      "family": "Ministral",
+      "id": "c4874eef-cef4-4eb0-b3bb-bf0efbd70478",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Ministral 8B",
+      "slug": "ministral-8b-2512"
+    },
+    {
+      "context_window": 32000,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "d41c30e4-df14-4e41-97a7-7dd9ef2dbfaa",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mistral 7B",
+      "slug": "mistral-7b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "97a6e82f-7b8a-4574-b619-cf8dc55b11f0",
+      "knowledge_cutoff": "2024-01-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Mistral Large",
+      "slug": "mistral-large"
+    },
+    {
+      "context_window": 256000,
+      "creator": "Mistral",
+      "family": "Mistral Large",
+      "id": "7ef089af-c2c1-4be9-bafa-680d02adabbd",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Mistral Large 3",
+      "slug": "mistral-large-3"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "4cd2acf7-f02f-4396-8771-d77add62d0d0",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Mistral Medium 3",
+      "slug": "mistral-medium-3"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "4b8d2eb9-6174-4350-bfc4-36c9376410d9",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Mistral Medium 3.1",
+      "slug": "mistral-medium-3-1"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "00717d25-cefe-4eba-8137-9f5e84e14795",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mistral Nemo",
+      "slug": "mistral-nemo"
+    },
+    {
+      "context_window": 32768,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "1595a15d-3c5d-4f89-bcf2-9688bc73a511",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mistral Saba",
+      "slug": "mistral-saba"
+    },
+    {
+      "context_window": 32000,
+      "creator": "Mistral",
+      "family": "Mistral",
+      "id": "30aa858e-fa63-42ba-a4e9-674a2e589809",
+      "knowledge_cutoff": "2023-09-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Mistral Small",
+      "slug": "mistral-small"
+    },
+    {
+      "context_window": 64000,
+      "creator": "Mistral",
+      "family": "Mixtral",
+      "id": "5be3a2b8-eb53-43c9-b251-3896873fefbf",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Mixtral 8x22B",
+      "slug": "mixtral-8x22b"
+    },
+    {
+      "context_window": 32000,
+      "creator": "Mistral",
+      "family": "Mixtral",
+      "id": "a0ff832f-a506-4b4a-a86f-789384a95b3c",
+      "knowledge_cutoff": "2023-09-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Mixtral 8x7B",
+      "slug": "mixtral-8x7b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "a9642658-d6ef-4a0c-9333-5b2fd2695716",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Nemotron 3 Nano 30B",
+      "slug": "nemotron-3-nano-30b-a3b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "fa982b7b-1d12-4a79-81f8-adfc6ab81e95",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Nemotron 3 Super 120B",
+      "slug": "nemotron-3-super-120b-a12b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "48de93a8-ce47-41dc-8c30-d2c1b3231000",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Nemotron Nano 12B v2 VL",
+      "slug": "nemotron-nano-12b-v2-vl"
+    },
+    {
+      "context_window": 131072,
+      "creator": "NVIDIA",
+      "family": "Nemotron",
+      "id": "16f834ed-a40d-45ba-8e62-67e64a84cbc6",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Nemotron Nano 9B v2",
+      "slug": "nemotron-nano-9b-v2"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Amazon",
+      "family": "Nova",
+      "id": "510f3039-3178-4348-b922-280fa146987b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Nova 2 Lite",
+      "slug": "nova-2-lite-v1"
+    },
+    {
+      "context_window": 300000,
+      "creator": "Amazon",
+      "family": "Nova",
+      "id": "b5e5ede8-d644-4a9d-852d-2e9fe83f7df8",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Nova Lite",
+      "slug": "nova-lite-v1"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Amazon",
+      "family": "Nova",
+      "id": "b357f40e-5676-4b92-8c22-e293c83a3f0c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Nova Micro",
+      "slug": "nova-micro-v1"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Amazon",
+      "family": "Nova",
+      "id": "ada8eec5-5cd7-4a5d-b862-59b0e2d569c7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Nova Premier",
+      "slug": "nova-premier-v1"
+    },
+    {
+      "context_window": 300000,
+      "creator": "Amazon",
+      "family": "Nova",
+      "id": "3fe37954-3073-46a9-bad3-a0b7083079a7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Nova Pro",
+      "slug": "nova-pro-v1"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "o-series",
+      "id": "c40d74d0-13a0-4a2a-84b1-33508a3db29b",
+      "knowledge_cutoff": "2024-06-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "o1",
+      "slug": "o1"
+    },
+    {
+      "context_window": 128000,
+      "creator": "OpenAI",
+      "family": "o-series",
+      "id": "0e43107f-a2e1-4ba4-9f5e-748cb11c8ff4",
+      "knowledge_cutoff": "2024-06-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "o1-mini",
+      "slug": "o1-mini"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "o-series",
+      "id": "540a1c9d-7f30-49a0-b36e-6f1ca790f72a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "o3 Deep Research",
+      "slug": "o3-deep-research"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "o-series",
+      "id": "0d14806e-b358-4974-b5d5-17b7adf52589",
+      "knowledge_cutoff": "2024-10-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "o3-mini",
+      "slug": "o3-mini"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "o-series",
+      "id": "030218f2-078b-43f7-a0e7-0b3018e9722a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "o3 Pro",
+      "slug": "o3-pro"
+    },
+    {
+      "context_window": 200000,
+      "creator": "OpenAI",
+      "family": "o-series",
+      "id": "9566d08b-6a9e-41b2-9c51-0e1d98816d52",
+      "knowledge_cutoff": "2025-06-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "o4-mini",
+      "slug": "o4-mini"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "f61f1299-5f0c-4033-8af0-a2062518538a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "OpenAI Omni Moderation",
+      "slug": "omni-moderation"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "97d244f4-abbd-4db8-8166-2760fa0b172b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "OpenAI TTS-1",
+      "slug": "tts-1"
+    },
+    {
+      "context_window": 1040000,
+      "creator": "Writer",
+      "family": "Palmyra",
+      "id": "e352e1e5-2121-4361-914c-20a2f7ca732a",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Palmyra X5",
+      "slug": "palmyra-x5"
+    },
+    {
+      "context_window": 16384,
+      "creator": "Microsoft",
+      "family": "Phi",
+      "id": "f5d93096-ca64-47a6-8025-c42fa8f16b50",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Phi-4",
+      "slug": "phi-4"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Mistral",
+      "family": "Pixtral",
+      "id": "1cebf90f-1dd3-4c1e-bc85-514ba05467a9",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Pixtral Large",
+      "slug": "pixtral-large-2411"
+    },
+    {
+      "context_window": null,
+      "creator": "Playground",
+      "family": null,
+      "id": "8a0a4408-7bac-441e-ace5-a1785599b9d2",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Playground v2 1024",
+      "slug": "playground-v2-1024"
+    },
+    {
+      "context_window": null,
+      "creator": "Playground",
+      "family": null,
+      "id": "4c6571dd-5eec-4fff-a50c-08198c3ac910",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Playground v2.5 1024",
+      "slug": "playground-v2-5-1024"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "d888d3e0-ba89-41b2-8343-716445950ba5",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 2.5 14B",
+      "slug": "qwen-2-5-14b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "4912eb4b-6e7c-4d19-ab4e-1a0907334bf6",
+      "knowledge_cutoff": "2024-03-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 2.5 72B",
+      "slug": "qwen-2-5-72b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "4c63674e-bf0a-4e9f-8fe4-19ce8453942b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 2.5 7B",
+      "slug": "qwen-2-5-7b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "d5287dd2-7f11-4a8f-a158-4c445ffe56fe",
+      "knowledge_cutoff": "2024-03-01",
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 2.5 Coder 32B",
+      "slug": "qwen-2-5-coder-32b"
+    },
+    {
+      "context_window": 32768,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "b3b2d367-83e2-4581-aaa4-515648f3f06e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 2.5 Coder 7B",
+      "slug": "qwen2-5-coder-7b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "9e3c5580-f2a3-49ef-938d-954768ccf8c9",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen 2.5 VL 32B",
+      "slug": "qwen2-5-vl-32b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "29516368-331a-403b-bb52-3d0a5027d767",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen 2.5 VL 72B",
+      "slug": "qwen-2-5-vl-72b"
+    },
+    {
+      "context_window": 40960,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "663cafbb-a5e9-451f-ba8c-f2c58f3e42a8",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 14B",
+      "slug": "qwen3-14b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "0897d22d-2a86-42ba-a8d9-68f5c57af1b1",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 235B",
+      "slug": "qwen-3-235b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "e43870d6-9d4b-49d8-ad22-2bb152e24891",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 30B",
+      "slug": "qwen3-30b-a3b"
+    },
+    {
+      "context_window": 40960,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "edf8948a-c765-4256-b2b0-6447a1f36456",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 32B",
+      "slug": "qwen3-32b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "f0958518-288d-4be8-82c9-fbfd13a19d09",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Qwen 3.5 122B",
+      "slug": "qwen3-5-122b-a10b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "17f3f098-494d-4ace-8cef-acc107194091",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Qwen 3.5 27B",
+      "slug": "qwen3-5-27b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "304eb31d-0bf2-4f1f-9975-66464a8a26f7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Qwen 3.5 35B",
+      "slug": "qwen3-5-35b-a3b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "408ff428-e1f6-4d02-a09d-2c5b01814d66",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3.5 397B",
+      "slug": "qwen-3-5-397b"
+    },
+    {
+      "context_window": 256000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "1e62a280-d84d-4214-97a6-77da3469b7a1",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Qwen 3.5 9B",
+      "slug": "qwen3-5-9b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen 3.6",
+      "id": "1e31e865-b1f8-474d-bc05-c4621eb625a7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Qwen 3.6 27B",
+      "slug": "qwen-3-6-27b"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Alibaba",
+      "family": "Qwen 3.6",
+      "id": "559d7b72-a8c0-45a2-a1ad-4b16e9b0cc3c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3.6 Plus",
+      "slug": "qwen-3-6-plus"
+    },
+    {
+      "context_window": 40960,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "6f684f14-7dd0-43b3-b13d-622273504c2e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 8B",
+      "slug": "qwen3-8b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "76f447d4-dc51-440b-8ef3-4bf46c06103f",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 Coder 30B",
+      "slug": "qwen-3-coder-30b"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "23333a32-193f-49f6-82fc-0706c240f6af",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 Coder Flash",
+      "slug": "qwen3-coder-flash"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "499ea9cf-53cd-4d59-828d-96c1ac187707",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 Coder Plus",
+      "slug": "qwen3-coder-plus"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "772615e8-456c-4da1-8cd0-00bae0ab1ea0",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen 3 Max",
+      "slug": "qwen3-max"
+    },
+    {
+      "context_window": null,
+      "creator": "Alibaba",
+      "family": null,
+      "id": "1f91a9e8-bf71-448f-a1fc-6d4e525d587c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen3 Reranker 4B",
+      "slug": "qwen3-reranker-4b"
+    },
+    {
+      "context_window": null,
+      "creator": "Alibaba",
+      "family": null,
+      "id": "eb3ad97c-87a2-4365-a6e5-9c58110d9a9d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen3 Reranker 8B",
+      "slug": "qwen3-reranker-8b"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "538b405f-c3ab-4194-ae8a-0ce92e4cf041",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen 3 VL 235B",
+      "slug": "qwen3-vl-235b-a22b"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "d99c17aa-c972-4983-8e9c-973eeb9e0e1c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen 3 VL 30B",
+      "slug": "qwen3-vl-30b-a3b"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "23f67825-5320-43f2-91f6-3bb301c99c70",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen 3 VL 32B",
+      "slug": "qwen-3-vl-32b"
+    },
+    {
+      "context_window": 32768,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "a55f1aa8-2437-459a-9707-6bd9c92dcfce",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen Max",
+      "slug": "qwen-max"
+    },
+    {
+      "context_window": 1000000,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "c76663fc-f184-4a80-9a0b-856b28d0f39f",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Qwen Plus",
+      "slug": "qwen-plus"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "670cab2d-afda-4bd0-8d34-81a187ef6231",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen VL Max",
+      "slug": "qwen-vl-max"
+    },
+    {
+      "context_window": 131072,
+      "creator": "Alibaba",
+      "family": "Qwen",
+      "id": "75e6c9d4-c7a7-4e8a-be13-2848070b3382",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Qwen VL Plus",
+      "slug": "qwen-vl-plus"
+    },
+    {
+      "context_window": 32000,
+      "creator": "Alibaba",
+      "family": "QwQ",
+      "id": "365179c3-3a02-4157-88f6-0f8202f03b82",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "QwQ 32B",
+      "slug": "qwq-32b"
+    },
+    {
+      "context_window": null,
+      "creator": "Recraft",
+      "family": null,
+      "id": "8ad00fc3-288e-45b0-a089-5b5eb6ce0ed7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Recraft v3",
+      "slug": "recraft-v3"
+    },
+    {
+      "context_window": 16384,
+      "creator": "Reka",
+      "family": "Reka",
+      "id": "2acacead-2d05-4571-9a75-4f30f00de8c4",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Reka Edge",
+      "slug": "reka-edge"
+    },
+    {
+      "context_window": 65536,
+      "creator": "Reka",
+      "family": "Reka",
+      "id": "2c0e2228-c84e-49b0-8989-e88b43989f8d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Reka Flash 3",
+      "slug": "reka-flash-3"
+    },
+    {
+      "context_window": 262144,
+      "creator": "ByteDance",
+      "family": "Seed",
+      "id": "94038a8c-b815-4043-9e9e-44d97a3ce06c",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Seed 1.6",
+      "slug": "seed-1-6"
+    },
+    {
+      "context_window": 262144,
+      "creator": "ByteDance",
+      "family": "Seed",
+      "id": "b9e5cff1-a079-4080-9bc0-1929c4073418",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Seed 1.6 Flash",
+      "slug": "seed-1-6-flash"
+    },
+    {
+      "context_window": 262144,
+      "creator": "ByteDance",
+      "family": "Seed",
+      "id": "3daf9b7d-b3ab-48e2-9d0e-b303818c3df9",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Seed 2.0 Lite",
+      "slug": "seed-2-0"
+    },
+    {
+      "context_window": 262144,
+      "creator": "ByteDance",
+      "family": "Seed",
+      "id": "ffdb230a-7662-4084-9079-b1008c4e5749",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "name": "Seed 2.0 Mini",
+      "slug": "seed-2-0-mini"
+    },
+    {
+      "context_window": null,
+      "creator": "Segmind",
+      "family": null,
+      "id": "0763867c-d4c6-4f53-9f24-603d9ff2b275",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Segmind SSD-1B",
+      "slug": "segmind-ssd-1b"
+    },
+    {
+      "context_window": 127072,
+      "creator": "Perplexity",
+      "family": "Sonar",
+      "id": "27cb5c10-a692-4147-a45b-a1f6c0592e36",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Sonar",
+      "slug": "sonar"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Perplexity",
+      "family": "Sonar",
+      "id": "206117a4-d7a1-48ca-8e63-f1bf87b9ca2d",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Sonar Deep Research",
+      "slug": "sonar-deep-research"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Perplexity",
+      "family": "Sonar",
+      "id": "759324a9-da3c-4ad0-b64d-eb9e8749c580",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Sonar Pro",
+      "slug": "sonar-pro"
+    },
+    {
+      "context_window": 200000,
+      "creator": "Perplexity",
+      "family": "Sonar",
+      "id": "1451597e-1fd6-4958-adcc-b05649dc1ab2",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Sonar Pro Search",
+      "slug": "sonar-pro-search"
+    },
+    {
+      "context_window": 128000,
+      "creator": "Perplexity",
+      "family": "Sonar",
+      "id": "07bbeb85-36b9-4c72-b587-7f2ca2cd908b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "name": "Sonar Reasoning Pro",
+      "slug": "sonar-reasoning-pro"
+    },
+    {
+      "context_window": null,
+      "creator": "Stability AI",
+      "family": null,
+      "id": "26b18aa1-671b-4a83-ac26-385f7fa2b27b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Stable Diffusion 3.5 Large",
+      "slug": "stable-diffusion-3-5-large"
+    },
+    {
+      "context_window": null,
+      "creator": "Stability AI",
+      "family": null,
+      "id": "80a0f4d5-b70d-4c3f-b2b7-cb400561df9b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Stable Diffusion 3.5 Medium",
+      "slug": "stable-diffusion-3-5-medium"
+    },
+    {
+      "context_window": null,
+      "creator": "Stability AI",
+      "family": null,
+      "id": "5050b806-e27e-4cc2-83f4-96298cc81c85",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Stable Diffusion XL",
+      "slug": "stable-diffusion-xl"
+    },
+    {
+      "context_window": 262144,
+      "creator": "Stepfun",
+      "family": "Step",
+      "id": "d44a2a00-729c-4b4a-a8e7-853756cb90b4",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Step 3.5 Flash",
+      "slug": "step-3-5-flash"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "53d91a82-a94f-4f1b-8ecf-7fb3041d15cf",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "text-embedding-3-large",
+      "slug": "text-embedding-3-large"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "b111c893-e138-4461-845a-52be3b49aeb4",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "text-embedding-3-small",
+      "slug": "text-embedding-3-small"
+    },
+    {
+      "context_window": 32000,
+      "creator": "Mistral",
+      "family": "Voxtral",
+      "id": "b4399656-f3de-4b36-bc0a-5fb42d53537e",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text",
+        "audio"
+      ],
+      "name": "Voxtral Small 24B",
+      "slug": "voxtral-small-24b-2507"
+    },
+    {
+      "context_window": null,
+      "creator": "Voyage AI",
+      "family": null,
+      "id": "d52bc9b5-4de6-402f-accf-4f79aa8ff5fd",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Voyage 3",
+      "slug": "voyage-3"
+    },
+    {
+      "context_window": null,
+      "creator": "WaveSpeed",
+      "family": null,
+      "id": "6f0068d4-c699-425a-93c1-5d835f40be36",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Wan 2.1 Image-to-Video 480p",
+      "slug": "wan-2-1-i2v-480p"
+    },
+    {
+      "context_window": null,
+      "creator": "WaveSpeed",
+      "family": null,
+      "id": "cc85313b-00af-448f-ab88-c9968a5253f7",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Wan 2.1 Image-to-Video 720p",
+      "slug": "wan-2-1-i2v-720p"
+    },
+    {
+      "context_window": null,
+      "creator": "WaveSpeed",
+      "family": null,
+      "id": "6ef307dc-46ca-4997-a3c1-b61fe49609b8",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Wan 2.1 Text-to-Video",
+      "slug": "wan-2-1-t2v"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "64ef2f01-e57e-4683-9b17-ea40e778422b",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Whisper V3 Large",
+      "slug": "whisper-v3-large"
+    },
+    {
+      "context_window": null,
+      "creator": "OpenAI",
+      "family": null,
+      "id": "918dcfb6-ef93-4bd9-9ad7-a7b46b254054",
+      "knowledge_cutoff": null,
+      "modalities": [
+        "text"
+      ],
+      "name": "Whisper V3 Turbo",
+      "slug": "whisper-v3-turbo"
+    }
+  ],
+  "meta": {
+    "count": 214,
+    "generated_at": "2026-05-26T09:44:45.941Z",
+    "rate_limit": {
+      "limit": 60,
+      "remaining": 58,
+      "reset": 1779789600000,
+      "window_seconds": 3600
+    },
+    "tier": "public",
+    "upgrade_hint": "A free API key lifts your limit from 60/hr per IP to 5,000/hr per key and extends trend windows to 30 days. Get one at https://computeprices.com/docs/api#authentication",
+    "version": "v1"
+  }
+}

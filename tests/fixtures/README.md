@@ -23,4 +23,9 @@ Captured upstream API responses, used by all tests in place of live network call
 
 | File | Source | Captured by | Notes |
 |---|---|---|---|
-| `cp_gpus_2026-05-26.json` | `GET https://www.computeprices.com/api/v1/gpus` (anonymous) | `scripts/capture_cp_gpus_fixture.py` | 66 GPU rows. Used by M01 `tests/catalog/test_seed_join.py` to assert every `seeds/gpus_supplement.yaml` slug joins a real CP row. Data © ComputePrices, public catalog; refer to their site for the canonical attribution language we propagate in trust envelopes (ADR-001). |
+| `cp_gpus_2026-05-26.json` | `GET https://www.computeprices.com/api/v1/gpus` (anonymous) | `scripts/capture_cp_gpus_fixture.py gpus` | 66 GPU rows. Used by M01 `tests/catalog/test_seed_join.py` to assert every `seeds/gpus_supplement.yaml` slug joins a real CP row. |
+| `cp_gpu_prices_2026-05-26.json` | `GET https://www.computeprices.com/api/v1/gpu-prices` (anonymous) | `scripts/capture_cp_gpus_fixture.py gpu-prices` | 1000 (provider, GPU, pricing_type) price rows. Used by M02 `tests/pricing/test_projections.py` to project every row through `GpuPriceRow` and confirm the pricing_type Literal stays exhaustive. |
+| `cp_llm_models_2026-05-26.json` | `GET https://www.computeprices.com/api/v1/llm-models` (anonymous) | `scripts/capture_cp_gpus_fixture.py llm-models` | 214 LLM rows (slug + name + creator + family + context_window + modalities + knowledge_cutoff). Used by M02 `tests/pricing/test_projections.py::TestLlmCatalogRow`. |
+| `cp_llm_prices_2026-05-26.json` | `GET https://www.computeprices.com/api/v1/llm-prices` (anonymous) | `scripts/capture_cp_gpus_fixture.py llm-prices` | 498 (provider, model, pricing_type) per-1M-token price rows including the new `price_per_1m_cached_input_usd` field. Used by M02 `tests/pricing/test_projections.py::TestLlmPriceRow`. |
+
+All CP fixtures: data © ComputePrices, public catalog; refer to <https://www.computeprices.com> for the canonical attribution language we propagate in TrustEnvelope.caveats (ADR-001).
