@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,21 @@ from whatcanirun.catalog.hf_model import KvCacheStrategy, Model
 HF_API_BASE = "https://huggingface.co/api/models"
 HF_RAW_BASE = "https://huggingface.co"
 DEFAULT_TIMEOUT_S = 30.0
+
+# slug becomes a cache filename under <cache_dir>/huggingface/. Restrict to
+# the conservative subset that's safe across filesystems AND can't traverse
+# (no `/`, no `..`, no leading dot, no shell metacharacters). Matches the
+# project's existing lowercase-with-dashes-and-underscores convention for
+# CP slugs.
+_SAFE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+# Hugging Face's documented repo_id grammar: <namespace>/<name>, each
+# segment matching ASCII alphanumerics + `._-`. Rejecting anything else
+# at the boundary prevents URL-path traversal (`foo/../bar`), query
+# string injection (`?token=`), userinfo segments (`@evil.com/x`), and
+# extra slashes that would target an unrelated HF endpoint with the
+# user's bearer token attached.
+_SAFE_REPO_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 class HfModelSync:
@@ -66,7 +82,23 @@ class HfModelSync:
         does, or safetensors metadata via a separate fetch). The
         `sync_all_tracked` caller passes them through from the
         tracked-models YAML row.
+
+        Both `slug` and `repo_id` are validated at this boundary — `slug`
+        is interpolated into the cache filename and `repo_id` into the
+        HF URL path, so a malformed value here is a path-traversal /
+        URL-injection vector. Invalid values raise `ValueError` BEFORE
+        any HTTP call or filesystem write.
         """
+        if not _SAFE_SLUG_RE.match(slug):
+            raise ValueError(
+                f"invalid slug {slug!r}: must match {_SAFE_SLUG_RE.pattern} "
+                "(lowercase alphanumerics + `._-`, no path separators)"
+            )
+        if not _SAFE_REPO_ID_RE.match(repo_id):
+            raise ValueError(
+                f"invalid repo_id {repo_id!r}: must match {_SAFE_REPO_ID_RE.pattern} "
+                "(HF's documented `<namespace>/<name>` format)"
+            )
         info = await self._fetch_info(repo_id)
         sha = str(info["sha"])
 

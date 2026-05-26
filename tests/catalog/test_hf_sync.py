@@ -235,6 +235,84 @@ async def test_passes_hf_token_when_provided(cache_dir: Path, llama_config: dict
     assert info_route.calls.last.request.headers.get("authorization") == "Bearer hf_test123"
 
 
+# ------------------------------------ slug + repo_id validation at boundary
+
+
+class TestSlugValidation:
+    @pytest.fixture
+    def sync(self, cache_dir: Path) -> HfModelSync:
+        return HfModelSync(cache_dir=cache_dir)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_slug",
+        [
+            "../../etc/passwd",
+            "../escape",
+            "/etc/cron.d/evil",
+            "a/b/c",
+            "with space",
+            "with\nnewline",
+            "",  # empty
+            ".",
+            "..",
+            "weird?query=1",
+            "UPPER_CASE",  # spec slugs are lowercase per existing CP convention
+        ],
+    )
+    async def test_rejects_unsafe_slug(self, sync: HfModelSync, bad_slug: str) -> None:
+        """Slug becomes a filename under the cache dir. Any value that
+        could traverse out, contain shell-meaningful chars, or violate
+        the project's lowercase-slug convention is rejected at the
+        boundary — before any HTTP fetch or filesystem write."""
+        with pytest.raises(ValueError, match="slug"):
+            await sync.sync_model(
+                repo_id="meta-llama/Llama-3.3-70B-Instruct",
+                slug=bad_slug,
+                display_name="ignored",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+
+
+class TestRepoIdValidation:
+    @pytest.fixture
+    def sync(self, cache_dir: Path) -> HfModelSync:
+        return HfModelSync(cache_dir=cache_dir)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_repo_id",
+        [
+            "../../admin",  # traversal
+            "meta-llama/Llama/../../attacker/poisoned",  # cache-poisoning path
+            "meta-llama",  # missing /
+            "meta-llama/Llama-3.3-70B-Instruct?token=x",  # query injection
+            "meta-llama/Llama-3.3-70B-Instruct#frag",  # fragment
+            "meta-llama/Llama-3.3-70B-Instruct/extra",  # extra slash
+            "/meta-llama/Llama-3.3-70B-Instruct",  # leading slash
+            "@evil.com/x",  # userinfo
+            "meta-llama/",  # trailing slash
+            "",  # empty
+            " meta-llama/Llama-3.3-70B-Instruct",  # leading space
+        ],
+    )
+    async def test_rejects_unsafe_repo_id(self, sync: HfModelSync, bad_repo_id: str) -> None:
+        """repo_id is interpolated directly into the HF URL. Anything
+        that could traverse paths on huggingface.co, inject a query
+        string, or change host semantics is rejected at the boundary.
+        HF's documented format is `<namespace>/<name>` with each segment
+        matching `[A-Za-z0-9_.-]+`."""
+        with pytest.raises(ValueError, match="repo_id"):
+            await sync.sync_model(
+                repo_id=bad_repo_id,
+                slug="some-slug",
+                display_name="ignored",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+
+
 # ---------------------------- end-to-end family auto-detection via HfModelSync
 
 
