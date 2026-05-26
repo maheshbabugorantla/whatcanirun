@@ -131,6 +131,115 @@ async def test_first_sync_persists_raw_config_per_adr_015(
     assert on_disk == llama_config
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_raw_config_bytes_are_byte_identical_not_reserialized(
+    cache_dir: Path,
+) -> None:
+    """ADR-015 invariant #2 demands the *raw bytes* HF returned land
+    on disk verbatim — not a parse → reserialize round-trip. A
+    Python `json.dumps(parsed)` rewrites whitespace, normalizes key
+    order, and drops formatting HF actually sent. That defeats the
+    invariant's purpose: a future schema-evolution audit needs the
+    exact bytes to compare against the documented schema, not our
+    reserialization of them.
+
+    This test uses a deliberately quirky source payload (custom key
+    ordering + unusual indentation) and asserts the on-disk file
+    matches the source bytes exactly. Round-trip dict equality would
+    pass even under the broken reserialize-via-json.dumps behavior,
+    so we compare strings here."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc123"
+
+    # Quirky-but-valid source bytes: 4-space indent, keys in
+    # non-alphabetic order, trailing newline. json.dumps(parsed) would
+    # produce single-line compact output, normalizing all three.
+    quirky_raw = (
+        "{\n"
+        '    "architectures": ["LlamaForCausalLM"],\n'
+        '    "num_hidden_layers": 80,\n'
+        '    "num_attention_heads": 64,\n'
+        '    "num_key_value_heads": 8,\n'
+        '    "hidden_size": 8192,\n'
+        '    "max_position_embeddings": 131072,\n'
+        '    "torch_dtype": "bfloat16"\n'
+        "}\n"
+    )
+
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(
+            200,
+            content=quirky_raw.encode(),
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    await sync.sync_model(
+        repo_id=repo_id,
+        slug="llama-3-3-70b",
+        display_name="Llama",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    raw_cache_file = cache_dir / "huggingface" / "llama-3-3-70b.config.json"
+    # Byte-for-byte match — would FAIL under reserialize-via-json.dumps
+    # because that strips whitespace and reorders keys.
+    assert raw_cache_file.read_text() == quirky_raw
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_raw_config_persists_even_when_shape_validation_fails(
+    cache_dir: Path,
+) -> None:
+    """ADR-015 invariant #2 doesn't just apply on the happy path — it
+    applies BEFORE any parse-or-validation step. A config.json missing
+    `architectures` (the family discriminator) gets rejected with
+    ValueError. But the raw bytes must still be on disk afterwards so
+    the investigator can read what HF actually returned (maybe HF
+    renamed the field, maybe the upstream payload was an HTML error
+    page, maybe the network corrupted it).
+
+    Pre-fix behavior: shape validation in `_fetch_config` raised
+    BEFORE persistence, so the raw bytes vanished. Post-fix: persist
+    raw bytes first, then parse + validate."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc"
+    missing_arch_payload = '{"num_hidden_layers": 80}'
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(
+            200,
+            content=missing_arch_payload.encode(),
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    with pytest.raises(ValueError, match="architectures"):
+        await sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+
+    # Raw STILL on disk despite the shape rejection — the investigator
+    # can read exactly what HF returned without needing to re-request.
+    raw_cache_file = cache_dir / "huggingface" / "llama-3-3-70b.config.json"
+    assert raw_cache_file.exists()
+    assert raw_cache_file.read_text() == missing_arch_payload
+
+
 # --------------------------------------------------- cache hit on same revision
 
 

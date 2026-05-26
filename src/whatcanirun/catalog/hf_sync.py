@@ -204,7 +204,7 @@ class HfModelSync:
             return cached_model
 
         try:
-            raw_config = await self._fetch_config_with_retry(repo_id, sha)
+            raw_config_text = await self._fetch_config_with_retry(repo_id, sha)
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             if not _is_retryable_http_error(exc):
                 raise
@@ -219,15 +219,44 @@ class HfModelSync:
                 f"after {self._retry_attempts} attempts and no cached Model "
                 f"exists at {cache_path}"
             ) from exc
-        # ADR-015 invariant #2: persist the raw upstream response verbatim
-        # BEFORE parsing, so a future projection bug or schema-evolution
-        # check can re-read the exact bytes HF returned. The projection
-        # (Model JSON) is also cached so cache-hit reads are fast. Raw
-        # is persisted BEFORE the family check below, so even on the
-        # unsupported-family skip path the investigator can read what
-        # HF actually returned.
+        # ADR-015 invariant #2: persist the raw upstream response
+        # **verbatim** BEFORE parsing — the exact bytes HF returned,
+        # not a json.dumps reserialization of them. A future schema-
+        # evolution audit needs to compare HF's bytes against the
+        # documented schema, not against our normalized rewrite. Raw
+        # is persisted BEFORE both the json.loads parse AND the
+        # shape-validation / family-detection checks below, so even
+        # on the parse-error / shape-error / unsupported-family skip
+        # paths the investigator can read what HF actually returned.
         self._hf_dir.mkdir(parents=True, exist_ok=True)
-        self._write_atomic(self._raw_path(slug), json.dumps(raw_config))
+        self._write_atomic(self._raw_path(slug), raw_config_text)
+
+        # Now parse + shape-validate the on-disk bytes. Any failure
+        # here surfaces as ValueError but the raw file persists per
+        # the invariant above.
+        try:
+            raw_config = json.loads(raw_config_text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"HF config.json for {repo_id!r}@{sha} is not valid JSON "
+                f"(raw bytes persisted at {self._raw_path(slug)})"
+            ) from exc
+        if not isinstance(raw_config, dict):
+            raise ValueError(
+                f"HF config.json for {repo_id!r}@{sha} is not a JSON object "
+                f"(raw bytes persisted at {self._raw_path(slug)})"
+            )
+        # `architectures` is the discriminator family detection reads;
+        # without it, the projection silently routes to "other" and the
+        # caller can't tell whether HF dropped the field or we got an
+        # unexpected payload shape. Surface the missing key at the
+        # boundary so the error names the real fault.
+        if "architectures" not in raw_config:
+            raise ValueError(
+                f"HF config.json for {repo_id!r}@{sha} missing required "
+                f"`architectures` field (cannot detect model family). "
+                f"Raw bytes persisted at {self._raw_path(slug)}."
+            )
 
         # Unsupported architecture family → raise so `sync_all_tracked`
         # can log + skip + continue with the next model rather than
@@ -525,7 +554,9 @@ class HfModelSync:
             "AsyncRetrying with reraise=True exhausted without raising"
         )
 
-    async def _fetch_config_with_retry(self, repo_id: str, sha: str) -> dict[str, Any]:
+    async def _fetch_config_with_retry(self, repo_id: str, sha: str) -> str:
+        """Retry wrapper around `_fetch_config`. Returns raw response
+        text — see `_fetch_config` docstring for why bytes-not-dict."""
         retryer = AsyncRetrying(
             stop=stop_after_attempt(self._retry_attempts),
             wait=wait_exponential(min=self._retry_wait_min_s, max=self._retry_wait_max_s),
@@ -557,22 +588,23 @@ class HfModelSync:
             )
         return payload
 
-    async def _fetch_config(self, repo_id: str, sha: str) -> dict[str, Any]:
+    async def _fetch_config(self, repo_id: str, sha: str) -> str:
+        """Fetch HF config.json and return the **raw response text**.
+
+        Returning text (not parsed dict) is load-bearing for ADR-015
+        invariant #2: the caller writes these bytes to disk verbatim
+        BEFORE parsing them, so a future schema-evolution audit can
+        compare the exact bytes HF returned against the documented
+        schema rather than our reserialization of them. Parsing and
+        shape validation happen in `sync_model` AFTER persistence so
+        a shape failure still leaves the raw bytes on disk for the
+        investigator.
+
+        Only HTTP-level errors are raised here (so the retry path can
+        see them); shape errors are the caller's problem.
+        """
         url = f"{HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json"
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.get(url, headers=self._headers())
         response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise ValueError(f"HF config.json for {repo_id!r}@{sha} is not a JSON object")
-        # `architectures` is the discriminator family detection reads;
-        # without it, the projection silently routes to "other" and the
-        # caller can't tell whether HF dropped the field or we got an
-        # unexpected payload shape. Surface the missing key at the
-        # boundary so the error names the real fault.
-        if "architectures" not in payload:
-            raise ValueError(
-                f"HF config.json for {repo_id!r}@{sha} missing required "
-                "`architectures` field (cannot detect model family)"
-            )
-        return payload
+        return response.text
