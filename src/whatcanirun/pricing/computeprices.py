@@ -19,6 +19,7 @@ import datetime as dt
 import gzip
 import json
 import os
+import random
 from pathlib import Path
 from typing import Any
 
@@ -61,8 +62,10 @@ CP_BASE_URL = "https://www.computeprices.com/api/v1"
 DEFAULT_TIMEOUT_S = 30.0
 
 # Per-endpoint cache TTL. Prices change hourly; catalogs change rarely.
-# Pitfall #4: real cache misses use TTL ± 60s jitter — implemented in
-# `_cache_age_within_ttl` so tests can monkeypatch deterministically.
+# Effective TTL is `_TTL_SECONDS[endpoint] + _jitter_seconds()` so the
+# fleet doesn't refresh in lockstep at the top of every hour (pitfall
+# #4 in spec/M02). Tests monkeypatch `_jitter_seconds` to 0 when they
+# need to assert TTL boundaries exactly.
 _TTL_SECONDS: dict[str, int] = {
     "gpus": 24 * 3600,
     "llm-models": 24 * 3600,
@@ -74,6 +77,25 @@ _TTL_SECONDS: dict[str, int] = {
 def _now() -> dt.datetime:
     """Module-level clock so tests can monkeypatch TTL behavior without sleeping."""
     return dt.datetime.now(dt.UTC)
+
+
+_JITTER_RANGE_S = 60.0
+
+
+def _jitter_seconds() -> float:
+    """Random offset added to the TTL cutoff on every cache-age check.
+
+    The point is to desynchronize fleet-wide refreshes — without it,
+    every client started at roughly the same time would expire its
+    cache simultaneously and hammer upstream in lockstep when prices
+    rolled over at the top of the hour (pitfall #4 in spec/M02).
+
+    Sampled per check rather than baked into the cached file's mtime
+    so multiple processes sharing one cache directory each get an
+    independent jitter window. Tests can monkeypatch this to a fixed
+    value (often 0.0) so TTL boundaries assert exactly.
+    """
+    return random.uniform(-_JITTER_RANGE_S, _JITTER_RANGE_S)
 
 
 class ComputePricesClient:
@@ -216,7 +238,7 @@ class ComputePricesClient:
             return False
         cached_at = dt.datetime.fromtimestamp(path.stat().st_mtime, tz=dt.UTC)
         age_s = (_now() - cached_at).total_seconds()
-        return age_s < ttl
+        return age_s < ttl + _jitter_seconds()
 
     def _read_cache(self, endpoint: str) -> dict[str, Any]:
         path = self._cache_path(endpoint)

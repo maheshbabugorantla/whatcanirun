@@ -229,6 +229,9 @@ async def test_now_function_is_monkeypatchable_for_tests(
     payload = _payload("cp_gpus_2026-05-26.json")
     route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
 
+    # Zero jitter so this test asserts the TTL boundary exactly.
+    monkeypatch.setattr(cp_mod, "_jitter_seconds", lambda: 0.0)
+
     client = ComputePricesClient(cache_dir=cache_dir)
     await client.get_gpu_catalog()
     assert route.call_count == 1
@@ -239,3 +242,63 @@ async def test_now_function_is_monkeypatchable_for_tests(
 
     await client.get_gpu_catalog()
     assert route.call_count == 2
+
+
+# ------------------------------------------------------------------ jitter
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_positive_jitter_extends_ttl_window(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With +60s jitter, a prices cache 1h + 30s old is still inside
+    the (3600 + 60 = 3660s) effective TTL — must serve from cache."""
+    payload = _payload("cp_gpu_prices_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpu-prices").mock(return_value=httpx.Response(200, json=payload))
+
+    monkeypatch.setattr(cp_mod, "_jitter_seconds", lambda: 60.0)
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    await client.get_gpu_prices()
+    assert route.call_count == 1
+
+    cache_file = cache_dir / "gpu-prices.latest.json"
+    age = time.time() - (3600 + 30)
+    os.utime(cache_file, (age, age))
+
+    await client.get_gpu_prices()
+    assert route.call_count == 1, "cache 1h30s old must serve with +60s jitter"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_negative_jitter_shortens_ttl_window(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With -60s jitter, a prices cache 1h - 30s old is past the
+    effective TTL (3600 - 60 = 3540s) and must refetch."""
+    payload = _payload("cp_gpu_prices_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpu-prices").mock(return_value=httpx.Response(200, json=payload))
+
+    monkeypatch.setattr(cp_mod, "_jitter_seconds", lambda: -60.0)
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    await client.get_gpu_prices()
+    assert route.call_count == 1
+
+    cache_file = cache_dir / "gpu-prices.latest.json"
+    age = time.time() - (3600 - 30)
+    os.utime(cache_file, (age, age))
+
+    await client.get_gpu_prices()
+    assert route.call_count == 2, "cache 0h59m30s old must refetch with -60s jitter"
+
+
+def test_jitter_seconds_is_bounded_to_plus_minus_60() -> None:
+    """Statistical check: 1000 samples must all fall within [-60, 60]."""
+    samples = [cp_mod._jitter_seconds() for _ in range(1000)]
+    assert min(samples) >= -60.0
+    assert max(samples) <= 60.0
+    # Not constant — at least 1 distinct value pair in 1000 samples.
+    assert len(set(samples)) > 1
