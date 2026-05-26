@@ -189,7 +189,7 @@ class HfModelSync:
             # only retryable errors land here.
             if not _is_retryable_http_error(exc):
                 raise
-            cached_model = self._read_any_cached_model(cache_path)
+            cached_model = self._read_any_cached_model(cache_path, repo_id)
             if cached_model is not None:
                 return cached_model
             raise HfModelSyncUnavailable(
@@ -199,7 +199,7 @@ class HfModelSync:
             ) from exc
 
         sha = info["sha"]
-        cached_model = self._read_cached_model(cache_path, sha)
+        cached_model = self._read_cached_model(cache_path, repo_id, sha)
         if cached_model is not None:
             return cached_model
 
@@ -209,9 +209,12 @@ class HfModelSync:
             if not _is_retryable_http_error(exc):
                 raise
             # Info succeeded but config didn't; if we still have ANY
-            # cached Model for this slug (even a stale-SHA one), prefer
-            # that over a hard failure.
-            cached_model = self._read_any_cached_model(cache_path)
+            # cached Model for this slug+repo_id (even a stale-SHA
+            # one), prefer that over a hard failure. The repo_id
+            # check stays load-bearing here: serving vendor-a's stale
+            # Model when the caller asked about vendor-b would be a
+            # trust-contract violation.
+            cached_model = self._read_any_cached_model(cache_path, repo_id)
             if cached_model is not None:
                 return cached_model
             raise HfModelSyncUnavailable(
@@ -419,7 +422,7 @@ class HfModelSync:
         return self._hf_dir / f"{slug}.config.json"
 
     @staticmethod
-    def _read_any_cached_model(cache_path: Path) -> Model | None:
+    def _read_any_cached_model(cache_path: Path, expected_repo_id: str) -> Model | None:
         """Stale-tolerant cache read for the upstream-down fallback path.
 
         Same shape-resilience as `_read_cached_model` but does NOT
@@ -427,6 +430,16 @@ class HfModelSync:
         unreachable we don't know the current SHA. Returning a stale
         Model is honest under ADR-013 ("never fail tool calls outright")
         because the trust envelope (M08) carries the freshness signal.
+
+        `expected_repo_id` IS still checked: the cache filename is
+        slug-derived, and a user re-pointing `slug=X` from
+        `vendor-a/foo` to `vendor-b/bar` (via an edited
+        user_models.yaml or updated seed) would otherwise see the
+        stale fallback return vendor-a's Model under the new repo's
+        request — silently mismatching upstream. Returning None on
+        repo_id divergence pushes the caller to surface
+        `HfModelSyncUnavailable` honestly rather than serving the
+        wrong repo's data dressed up as the requested one.
         """
         if not cache_path.exists():
             return None
@@ -435,6 +448,8 @@ class HfModelSync:
         except (OSError, json.JSONDecodeError):
             return None
         if not isinstance(decoded, dict):
+            return None
+        if decoded.get("hf_repo_id") != expected_repo_id:
             return None
         try:
             return Model.model_validate(decoded)
@@ -442,14 +457,24 @@ class HfModelSync:
             return None
 
     @staticmethod
-    def _read_cached_model(cache_path: Path, expected_sha: str) -> Model | None:
-        """Return the cached Model when it exists, parses as a dict with
-        a matching `hf_revision_sha`, AND validates against the current
-        Model schema. Any other state — file missing, malformed JSON,
-        non-dict decoded value, missing/mismatched SHA, or
+    def _read_cached_model(
+        cache_path: Path, expected_repo_id: str, expected_sha: str
+    ) -> Model | None:
+        """Return the cached Model when it exists, parses as a dict
+        with matching `hf_repo_id` AND `hf_revision_sha`, AND
+        validates against the current Model schema. Any other state —
+        file missing, malformed JSON, non-dict decoded value,
+        missing/mismatched repo_id, missing/mismatched SHA, or
         ValidationError from a schema migration — returns None so the
-        caller transparently refetches. The cache must NEVER make the
-        callable harder to use than no cache at all.
+        caller transparently refetches. The cache must NEVER make
+        the callable harder to use than no cache at all.
+
+        `expected_repo_id` is the load-bearing check that handles
+        slug→repo_id remapping (user edits user_models.yaml; seed
+        bumps a tracked entry to a new HF repo). Without it, two
+        repos sharing a revision SHA — either by coincidence or
+        attacker-controlled — could collide under the same slug
+        filename and return the wrong upstream's data.
         """
         if not cache_path.exists():
             return None
@@ -458,6 +483,8 @@ class HfModelSync:
         except (OSError, json.JSONDecodeError):
             return None
         if not isinstance(decoded, dict):
+            return None
+        if decoded.get("hf_repo_id") != expected_repo_id:
             return None
         if decoded.get("hf_revision_sha") != expected_sha:
             return None

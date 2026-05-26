@@ -328,6 +328,132 @@ async def test_sync_refetches_when_revision_sha_changes(
     assert config_b.call_count == 1
 
 
+# ------------------------------ cache coherency on slug→repo_id remapping
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_cache_hit_rejected_when_cached_repo_id_differs_from_requested(
+    cache_dir: Path, llama_config: dict[str, Any]
+) -> None:
+    """Cache lookup keys off `<slug>.model.json` and a matching
+    revision SHA. Without an `hf_repo_id` check, two distinct repos
+    that happen to share a revision SHA could collide — but more
+    concretely: a user can edit `~/.config/whatcanirun/user_models.yaml`
+    to remap `slug=my-model` from `vendor-a/foo` to `vendor-b/bar`,
+    and the next `sync_model` call would return a stale Model whose
+    `hf_repo_id == vendor-a/foo`. Downstream M07 / M09 then make
+    decisions against the wrong repo's config.json — silently.
+
+    The cache hit MUST be rejected when the cached row's
+    `hf_repo_id` doesn't match the caller's requested `repo_id`.
+    The miss path refetches and overwrites with the correct row."""
+    cached_repo_id = "vendor-a/foo"
+    new_repo_id = "vendor-b/bar"
+    sha = "deadbeef"
+
+    # First sync: populate the cache for `slug=my-model` pointing
+    # at `vendor-a/foo` at sha=deadbeef.
+    respx.get(f"{_HF_API_BASE}/{cached_repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": cached_repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{cached_repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+    sync = HfModelSync(cache_dir=cache_dir)
+    first = await sync.sync_model(
+        repo_id=cached_repo_id,
+        slug="my-model",
+        display_name="My Model",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+    assert first.hf_repo_id == cached_repo_id
+
+    # User remaps slug to `vendor-b/bar`. The new repo happens to
+    # report the same sha (worst case for the collision — could be
+    # genuinely the same upstream commit hash by coincidence, or a
+    # CI test mock). The slug filename + SHA match the cached row,
+    # but the requested repo_id is different.
+    respx.get(f"{_HF_API_BASE}/{new_repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": new_repo_id})
+    )
+    new_config_route = respx.get(f"{_HF_RAW_BASE}/{new_repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+
+    second = await sync.sync_model(
+        repo_id=new_repo_id,
+        slug="my-model",
+        display_name="New Model",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    # The returned Model MUST reflect the requested repo, not the
+    # stale cached one.
+    assert second.hf_repo_id == new_repo_id, (
+        f"cache returned stale repo_id {second.hf_repo_id!r} "
+        f"instead of refetching for {new_repo_id!r}"
+    )
+    # And the config.json for the NEW repo MUST have been fetched —
+    # if the cache returned without going to network, the new
+    # config_route would not have been called.
+    assert new_config_route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_stale_fallback_rejected_when_cached_repo_id_differs(
+    fast_sync: HfModelSync, llama_config: dict[str, Any]
+) -> None:
+    """`_read_any_cached_model` is the upstream-down fallback path
+    (ADR-013): when info or config fetch fails, we'd rather serve a
+    stale Model than fail the tool call. But "stale" must still mean
+    "for the requested repo." If a user remaps slug→repo_id and HF
+    is then unreachable for the new repo, returning the OLD repo's
+    Model is dishonest — the trust envelope's `freshness["huggingface"]`
+    would suggest we have data for the new repo when we don't.
+
+    Behavior: when the only cached Model for the slug has a
+    different `hf_repo_id` than requested, the fallback is rejected
+    and `HfModelSyncUnavailable` is raised so the caller can surface
+    the no-data state honestly."""
+    cached_repo_id = "vendor-a/foo"
+    new_repo_id = "vendor-b/bar"
+    sha = "deadbeef"
+
+    # Pre-populate cache for vendor-a/foo.
+    respx.get(f"{_HF_API_BASE}/{cached_repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": cached_repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{cached_repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+    await fast_sync.sync_model(
+        repo_id=cached_repo_id,
+        slug="my-model",
+        display_name="My Model",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    # Now: HF info endpoint is down for the NEW repo. The slug's
+    # cache file exists (for vendor-a) but the requested repo is
+    # vendor-b. The stale-tolerant fallback must reject that
+    # cross-repo match and raise HfModelSyncUnavailable.
+    respx.get(f"{_HF_API_BASE}/{new_repo_id}").mock(return_value=httpx.Response(503, text="boom"))
+
+    with pytest.raises(HfModelSyncUnavailable):
+        await fast_sync.sync_model(
+            repo_id=new_repo_id,
+            slug="my-model",
+            display_name="New Model",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+
+
 # -------------------------------------------------------------------- auth
 
 
