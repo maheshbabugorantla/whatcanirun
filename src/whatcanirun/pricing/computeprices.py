@@ -130,6 +130,28 @@ class ComputePricesClient:
     async def get_llm_prices(self) -> list[LlmPriceRow]:
         return await self._fetch_and_project("llm-prices", LlmPriceRow)
 
+    async def get_raw_response(self, endpoint: str) -> dict[str, Any]:
+        """Return the full unparsed CP payload for `endpoint`, including
+        the top-level `meta` block that the typed-projection methods
+        drop. Shares the cache + retry + fallback path with those
+        methods, so callers don't burn extra quota by reaching for raw
+        data.
+
+        Intended uses (per spec/M02 § Public surface):
+          - TrustEnvelope.freshness consumers (M08) reading
+            `meta.generated_at`
+          - sampling new upstream fields before projecting them
+
+        Raises ValueError if `endpoint` isn't one of the four known CP
+        paths; arbitrary upstream URLs are deliberately not callable
+        through this method.
+        """
+        if endpoint not in _TTL_SECONDS:
+            raise ValueError(
+                f"unknown CP endpoint {endpoint!r}; expected one of {sorted(_TTL_SECONDS)}"
+            )
+        return await self._fetch_cached_or_live(endpoint)
+
     # --------------------------------------------------------------- internals
 
     def _headers(self) -> dict[str, str]:
@@ -272,9 +294,9 @@ class ComputePricesClient:
                     deleted += 1
         return deleted
 
-    async def _fetch_and_project[Row: _CpRow](
-        self, endpoint: str, row_model: type[Row]
-    ) -> list[Row]:
+    async def _fetch_cached_or_live(self, endpoint: str) -> dict[str, Any]:
+        """Shared cache + retry + fallback path used by both the typed
+        projection methods and the raw-access escape hatch."""
         payload: dict[str, Any] | None = None
         if self._cache_age_within_ttl(endpoint):
             try:
@@ -318,4 +340,10 @@ class ComputePricesClient:
                 # keeps the cache dir from growing without bound on
                 # long-running deployments.
                 self.prune_snapshots(older_than=self._snapshot_retention)
+        return payload
+
+    async def _fetch_and_project[Row: _CpRow](
+        self, endpoint: str, row_model: type[Row]
+    ) -> list[Row]:
+        payload = await self._fetch_cached_or_live(endpoint)
         return [row_model.project(item) for item in payload["data"]]
