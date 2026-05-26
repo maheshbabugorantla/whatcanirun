@@ -27,3 +27,18 @@ repos:
           - types-pyyaml
         args: [--config-file=pyproject.toml]
         files: ^src/
+
+  # Pre-push: full-repo gate that mirrors what CI checks. Catches the
+  # "I forgot to stage file X" failure mode that ordinary pre-commit
+  # cannot see (pre-commit hooks only run against staged files). Fires
+  # once per `git push`, not per commit, so local rapid iteration stays
+  # fast.
+  - repo: local
+    hooks:
+      - id: ci-gate
+        name: CI gate (ruff + mypy + pytest, full repo)
+        entry: bash -c 'uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run pytest -q'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
