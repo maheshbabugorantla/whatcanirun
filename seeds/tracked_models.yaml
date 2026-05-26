@@ -5,12 +5,27 @@
 # Schema (TrackedModelRow in src/whatcanirun/catalog/seed_schemas.py):
 #   slug                         (str, required)   Joins ComputePrices /api/v1/llm-models
 #   hf_repo_id                   (str, required)   Hugging Face repo identifier (namespace/name)
-#   display_name                 (str, required)   Human-friendly name for tool output
-#   total_params_b               (float, required) Total parameters in billions (model card)
+#   display_name                 (str, optional)   Human-friendly name; defaults to
+#                                                  hf_repo_id's last segment when omitted
+#   total_params_b               (float, optional) Total params in billions (from model card
+#                                                  or safetensors index — HF config.json
+#                                                  doesn't carry this). When null, M07 routes
+#                                                  affected cells to `requires_measurement`
+#                                                  per ADR-010 rather than fabricating a
+#                                                  value (trust contract). Project seeds
+#                                                  populate this; M09's user_models.yaml
+#                                                  rows often leave it null.
 #   active_params_b              (float, optional) Active params for MoE (None for dense)
 #   kv_cache_strategy_override   (enum, optional)  standard_gqa | mla | sliding_window
 #                                                  Overrides config-based auto-detection
 #   notes                        (str, optional)   Free-form context
+#
+# Minimum valid row: just `slug` + `hf_repo_id`. That's the shape M09's
+# `resolve_model` tool writes to `~/.config/whatcanirun/user_models.yaml`
+# after eliciting only the slug + repo_id from the user (they don't
+# know `total_params_b`). Project-controlled rows in THIS file should
+# still populate `display_name` + `total_params_b` for precision —
+# the optionality is for the per-user extension file.
 #
 # Spec target: 30 rows. v1 ships with 3 (one per family we have HF
 # fixtures for); the other 27 are tracked as M03 carry-forward debt

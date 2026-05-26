@@ -3,12 +3,22 @@
 Per ADR-015 the full `config.json` payload is preserved verbatim in
 `raw_config`. The typed fields below are the subset M06 / M07 consume
 today; nested or evolving objects (`rope_scaling`, MLA-specific keys,
-attention-bias flags, ...) stay inside `raw_config` and remain
-queryable as new milestones add accessors.
+MoE routing tables, attention-bias flags, ...) stay inside
+`raw_config` and remain queryable as new milestones add accessors.
 
-`from_hf_config` is the standard-GQA factory. Family-specific variants
-(DeepSeek MLA, Mixtral MoE, GPT-OSS MoE) land in `catalog/families/`
-as separate factories that subclass or delegate to this one.
+`from_hf_config` is the single factory for every family we sync. It
+auto-detects `architecture_family` from `raw_config["architectures"]`
+via `detect_architecture_family()`, then derives
+`kv_cache_strategy` from the family via `detect_kv_cache_strategy()`
+— so DeepSeek-V3 configs become `kv_cache_strategy="mla"` while
+everything else falls through to `"standard_gqa"`. MoE specifics
+(Mixtral's `num_local_experts`, DeepSeek's `n_routed_experts`) don't
+need a separate factory; they live in `raw_config` and the M07 KV /
+throughput math reads them directly when an `mla` / MoE branch
+applies. Callers can override either `architecture_family` or
+`kv_cache_strategy` for fine-tunes whose `architectures` string
+didn't get updated — that's the
+`seeds/tracked_models.yaml::kv_cache_strategy_override` path.
 """
 
 from __future__ import annotations
