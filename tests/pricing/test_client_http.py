@@ -190,6 +190,38 @@ async def test_empty_env_var_is_treated_as_unset(
     assert "authorization" not in {h.lower() for h in route.calls.last.request.headers}
 
 
+# ----------------------------------------------------- payload shape validation
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_rejects_payload_without_top_level_data(cache_dir: Path) -> None:
+    """If CP ever returns 200 OK with a payload that doesn't carry a
+    `data` array (mid-deploy, partial cache, gateway error swallowed),
+    fail fast with a clear message instead of crashing later during
+    list iteration."""
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json={"meta": {}}))
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    with pytest.raises(ValueError, match="data"):
+        await client.get_gpu_catalog()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_rejects_payload_with_non_list_data(cache_dir: Path) -> None:
+    """`data` must be an array. A dict here is the kind of upstream
+    drift that should fail at the boundary, not silently produce 0
+    projected rows."""
+    respx.get(f"{_BASE}/gpus").mock(
+        return_value=httpx.Response(200, json={"data": {"oops": "not a list"}})
+    )
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    with pytest.raises(ValueError, match="list"):
+        await client.get_gpu_catalog()
+
+
 # ---------------------------------------------------------------- raw passthrough
 
 

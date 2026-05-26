@@ -150,6 +150,11 @@ class ComputePricesClient:
         payload = response.json()
         if not isinstance(payload, dict) or "data" not in payload:
             raise ValueError(f"ComputePrices {endpoint!r}: response missing top-level `data` array")
+        if not isinstance(payload["data"], list):
+            raise ValueError(
+                f"ComputePrices {endpoint!r}: top-level `data` is "
+                f"{type(payload['data']).__name__}, expected list"
+            )
         return payload
 
     async def _fetch_raw_with_retry(self, endpoint: str) -> dict[str, Any]:
