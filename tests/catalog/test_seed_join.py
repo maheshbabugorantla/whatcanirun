@@ -61,6 +61,6 @@ def test_every_supplement_slug_joins_cp(supplement_slugs: list[str], cp_slugs: s
 def test_every_supplement_row_has_datasheet_url() -> None:
     rows = load_gpu_supplements(_SEEDS_PATH)
     for row in rows:
-        assert row.datasheet_url.startswith(
-            "https://"
-        ), f"row {row.slug!r} has non-https datasheet_url: {row.datasheet_url!r}"
+        assert row.datasheet_url.startswith("https://"), (
+            f"row {row.slug!r} has non-https datasheet_url: {row.datasheet_url!r}"
+        )
