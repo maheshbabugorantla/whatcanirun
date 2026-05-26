@@ -24,12 +24,37 @@ from typing import Any
 
 import httpx
 from pydantic import ValidationError
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from whatcanirun.catalog.hf_model import KvCacheStrategy, Model
 
 HF_API_BASE = "https://huggingface.co/api/models"
 HF_RAW_BASE = "https://huggingface.co"
 DEFAULT_TIMEOUT_S = 30.0
+
+
+class HfModelSyncUnavailable(Exception):  # noqa: N818 (parallel to ComputePricesUnavailable; user-facing identifier)
+    """Raised when Hugging Face is unreachable after retries AND no
+    cached `Model` exists for the slug. Mirrors M02's
+    `ComputePricesUnavailable` shape: caller is expected to surface
+    this through a trust envelope explaining the gap (ADR-013)."""
+
+
+def _is_retryable_http_error(exc: BaseException) -> bool:
+    """True for transient errors worth retrying — 429, 5xx, or any
+    connection-layer error. 4xx other than 429 is a client bug (bad
+    repo_id, missing token for a gated repo); retrying it burns quota
+    and masks the real problem."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return isinstance(exc, httpx.RequestError)
+
 
 # slug becomes a cache filename under <cache_dir>/huggingface/. Restrict to
 # the conservative subset that's safe across filesystems AND can't traverse
@@ -56,6 +81,9 @@ class HfModelSync:
         hf_token: str | None = None,
         *,
         timeout_s: float = DEFAULT_TIMEOUT_S,
+        retry_attempts: int = 4,
+        retry_wait_min_s: float = 1.0,
+        retry_wait_max_s: float = 4.0,
     ) -> None:
         self._hf_dir = cache_dir / "huggingface"
         # Match M02's empty-string-is-anonymous semantics so a CI safeguard
@@ -65,6 +93,12 @@ class HfModelSync:
             hf_token = env_token or None
         self._hf_token = hf_token
         self._timeout_s = timeout_s
+        # Retries: total attempts incl. the first one (spec: initial + 3
+        # retries on 429/5xx / connection errors). Tests pass wait_*_s=0
+        # so the suite doesn't sleep ~7s on every fallback path.
+        self._retry_attempts = retry_attempts
+        self._retry_wait_min_s = retry_wait_min_s
+        self._retry_wait_max_s = retry_wait_max_s
 
     async def sync_model(
         self,
@@ -100,15 +134,46 @@ class HfModelSync:
                 f"invalid repo_id {repo_id!r}: must match {_SAFE_REPO_ID_RE.pattern} "
                 "(HF's documented `<namespace>/<name>` format)"
             )
-        info = await self._fetch_info(repo_id)
-        sha = info["sha"]
 
         cache_path = self._hf_dir / f"{slug}.model.json"
+
+        try:
+            info = await self._fetch_info_with_retry(repo_id)
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            # 4xx other than 429 already escaped (retry policy didn't match);
+            # only retryable errors land here.
+            if not _is_retryable_http_error(exc):
+                raise
+            cached_model = self._read_any_cached_model(cache_path)
+            if cached_model is not None:
+                return cached_model
+            raise HfModelSyncUnavailable(
+                f"Hugging Face Hub unreachable for {repo_id!r} after "
+                f"{self._retry_attempts} attempts and no cached Model "
+                f"exists at {cache_path}"
+            ) from exc
+
+        sha = info["sha"]
         cached_model = self._read_cached_model(cache_path, sha)
         if cached_model is not None:
             return cached_model
 
-        raw_config = await self._fetch_config(repo_id, sha)
+        try:
+            raw_config = await self._fetch_config_with_retry(repo_id, sha)
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            if not _is_retryable_http_error(exc):
+                raise
+            # Info succeeded but config didn't; if we still have ANY
+            # cached Model for this slug (even a stale-SHA one), prefer
+            # that over a hard failure.
+            cached_model = self._read_any_cached_model(cache_path)
+            if cached_model is not None:
+                return cached_model
+            raise HfModelSyncUnavailable(
+                f"Hugging Face config.json fetch for {repo_id!r}@{sha} failed "
+                f"after {self._retry_attempts} attempts and no cached Model "
+                f"exists at {cache_path}"
+            ) from exc
         # ADR-015 invariant #2: persist the raw upstream response verbatim
         # BEFORE parsing, so a future projection bug or schema-evolution
         # check can re-read the exact bytes HF returned. The projection
@@ -142,6 +207,29 @@ class HfModelSync:
     def _raw_path(self, slug: str) -> Path:
         """Path to the verbatim HF config.json cache for `slug` (ADR-015)."""
         return self._hf_dir / f"{slug}.config.json"
+
+    @staticmethod
+    def _read_any_cached_model(cache_path: Path) -> Model | None:
+        """Stale-tolerant cache read for the upstream-down fallback path.
+
+        Same shape-resilience as `_read_cached_model` but does NOT
+        require the cached SHA to match anything — when HF is
+        unreachable we don't know the current SHA. Returning a stale
+        Model is honest under ADR-013 ("never fail tool calls outright")
+        because the trust envelope (M08) carries the freshness signal.
+        """
+        if not cache_path.exists():
+            return None
+        try:
+            decoded = json.loads(cache_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        try:
+            return Model.model_validate(decoded)
+        except ValidationError:
+            return None
 
     @staticmethod
     def _read_cached_model(cache_path: Path, expected_sha: str) -> Model | None:
@@ -184,6 +272,40 @@ class HfModelSync:
         if self._hf_token:
             headers["Authorization"] = f"Bearer {self._hf_token}"
         return headers
+
+    async def _fetch_info_with_retry(self, repo_id: str) -> dict[str, Any]:
+        """`_fetch_info` wrapped in tenacity retry on 429/5xx/RequestError.
+
+        4xx other than 429 bubbles immediately so the caller sees the
+        real client-side error (bad repo_id, missing token for a gated
+        repo) rather than the timed-out retry budget.
+        """
+        retryer = AsyncRetrying(
+            stop=stop_after_attempt(self._retry_attempts),
+            wait=wait_exponential(min=self._retry_wait_min_s, max=self._retry_wait_max_s),
+            retry=retry_if_exception(_is_retryable_http_error),
+            reraise=True,
+        )
+        async for attempt in retryer:
+            with attempt:
+                return await self._fetch_info(repo_id)
+        raise AssertionError(  # pragma: no cover
+            "AsyncRetrying with reraise=True exhausted without raising"
+        )
+
+    async def _fetch_config_with_retry(self, repo_id: str, sha: str) -> dict[str, Any]:
+        retryer = AsyncRetrying(
+            stop=stop_after_attempt(self._retry_attempts),
+            wait=wait_exponential(min=self._retry_wait_min_s, max=self._retry_wait_max_s),
+            retry=retry_if_exception(_is_retryable_http_error),
+            reraise=True,
+        )
+        async for attempt in retryer:
+            with attempt:
+                return await self._fetch_config(repo_id, sha)
+        raise AssertionError(  # pragma: no cover
+            "AsyncRetrying with reraise=True exhausted without raising"
+        )
 
     async def _fetch_info(self, repo_id: str) -> dict[str, Any]:
         url = f"{HF_API_BASE}/{repo_id}"

@@ -20,7 +20,7 @@ import httpx
 import pytest
 import respx
 
-from whatcanirun.catalog.hf_sync import HfModelSync
+from whatcanirun.catalog.hf_sync import HfModelSync, HfModelSyncUnavailable
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FIXTURES = _REPO_ROOT / "tests" / "fixtures"
@@ -42,6 +42,18 @@ def deepseek_config() -> dict[str, Any]:
 @pytest.fixture
 def cache_dir(tmp_path: Path) -> Path:
     return tmp_path / "cp"
+
+
+@pytest.fixture
+def fast_sync(cache_dir: Path) -> HfModelSync:
+    """Sync client with retries on but zero backoff so tests don't
+    burn ~7 seconds per fallback path on real exponential sleeps."""
+    return HfModelSync(
+        cache_dir=cache_dir,
+        retry_attempts=4,
+        retry_wait_min_s=0.0,
+        retry_wait_max_s=0.0,
+    )
 
 
 # ---------------------------------------------------- happy path: live -> cache
@@ -233,6 +245,183 @@ async def test_passes_hf_token_when_provided(cache_dir: Path, llama_config: dict
     )
 
     assert info_route.calls.last.request.headers.get("authorization") == "Bearer hf_test123"
+
+
+# --------------------------------------- retry + upstream-down fallback (ADR-013)
+
+
+class TestRetryAndFallback:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_transient_500_then_success_on_info_recovers(
+        self, fast_sync: HfModelSync, llama_config: dict[str, Any]
+    ) -> None:
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        info = respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            side_effect=[
+                httpx.Response(500, text="boom"),
+                httpx.Response(500, text="still boom"),
+                httpx.Response(200, json={"sha": sha, "modelId": repo_id}),
+            ]
+        )
+        respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        model = await fast_sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+
+        assert info.call_count == 3
+        assert model.slug == "llama-3-3-70b"
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_connect_error_on_info_recovers(
+        self, fast_sync: HfModelSync, llama_config: dict[str, Any]
+    ) -> None:
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            side_effect=[
+                httpx.ConnectError("dns hiccup"),
+                httpx.Response(200, json={"sha": sha, "modelId": repo_id}),
+            ]
+        )
+        respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        model = await fast_sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        assert model.slug == "llama-3-3-70b"
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_persistent_5xx_with_cache_serves_cache(
+        self, cache_dir: Path, fast_sync: HfModelSync, llama_config: dict[str, Any]
+    ) -> None:
+        """ADR-013: with a populated cache, persistent upstream failure
+        falls back to the cached Model rather than raising. Trust
+        envelope (M08) is the channel for surfacing staleness."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+
+        # First sync: success → populates cache.
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+        )
+        respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+        await fast_sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+
+        # Now upstream is down for the entire retry budget.
+        respx.reset()
+        fail = respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(503, text="service unavailable")
+        )
+
+        model = await fast_sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        # Served from cache (no exception).
+        assert model.slug == "llama-3-3-70b"
+        assert model.hf_revision_sha == sha  # the cached one
+        assert fail.call_count == 4  # full retry budget burned
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_persistent_5xx_without_cache_raises_unavailable(
+        self, fast_sync: HfModelSync
+    ) -> None:
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        fail = respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(503, text="down")
+        )
+
+        with pytest.raises(HfModelSyncUnavailable) as exc_info:
+            await fast_sync.sync_model(
+                repo_id=repo_id,
+                slug="llama-3-3-70b",
+                display_name="Llama",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+
+        assert "llama-3-3-70b" in str(exc_info.value) or repo_id in str(exc_info.value)
+        assert fail.call_count == 4
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_401_unauth_does_not_retry_and_does_not_fall_back(
+        self, fast_sync: HfModelSync
+    ) -> None:
+        """A 4xx other than 429 is a client bug (bad path / missing
+        token for a gated repo). Retrying just burns quota; serving
+        cache would mask the real auth problem. Bubble the
+        HTTPStatusError immediately."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        fail = respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(401, text="unauthorized")
+        )
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await fast_sync.sync_model(
+                repo_id=repo_id,
+                slug="llama-3-3-70b",
+                display_name="Llama",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+        assert fail.call_count == 1
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_429_is_retried(
+        self, fast_sync: HfModelSync, llama_config: dict[str, Any]
+    ) -> None:
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        info = respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            side_effect=[
+                httpx.Response(429, text="rate limit"),
+                httpx.Response(200, json={"sha": sha, "modelId": repo_id}),
+            ]
+        )
+        respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        model = await fast_sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        assert info.call_count == 2
+        assert model.slug == "llama-3-3-70b"
 
 
 # ----------------------------------------------- cache shape resilience
