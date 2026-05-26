@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import ValidationError
@@ -143,6 +143,59 @@ class TestProjectedFields:
 
 
 # ----------------------------------------------------------------- validation
+
+
+class TestFromHfConfigMissingKeys:
+    """`Model.from_hf_config` reads required keys via `raw_config[...]`
+    direct lookup. Missing keys must raise `ValueError` (with the
+    missing field name in the message), NOT bare `KeyError`. Reason:
+    `HfModelSync.sync_all_tracked` catches `(ValueError,
+    ValidationError, UnsupportedArchitectureFamily, ...)` for per-row
+    skip-and-continue, but does NOT catch `KeyError`. A malformed
+    config with `architectures` set but `num_attention_heads` missing
+    would crash the whole batch sync — silently dropping every model
+    that came after the bad one — instead of being skipped as a
+    soft per-row failure per spec/M03 § Failure modes."""
+
+    _BASE_KWARGS: ClassVar[dict[str, Any]] = {
+        "slug": "x",
+        "hf_repo_id": "vendor/x",
+        "display_name": "X",
+        "total_params_b": 1.0,
+        "active_params_b": None,
+        "raw_safetensors_meta": {},
+        "hf_revision_sha": "abc",
+        "last_synced_at": dt.datetime(2026, 5, 26, tzinfo=dt.UTC),
+    }
+
+    _COMPLETE_RAW: ClassVar[dict[str, Any]] = {
+        "architectures": ["LlamaForCausalLM"],
+        "num_hidden_layers": 80,
+        "num_attention_heads": 64,
+        "num_key_value_heads": 8,
+        "hidden_size": 8192,
+        "max_position_embeddings": 131072,
+        "torch_dtype": "bfloat16",
+    }
+
+    @pytest.mark.parametrize(
+        "missing_key",
+        [
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "hidden_size",
+            "max_position_embeddings",
+            "torch_dtype",
+        ],
+    )
+    def test_missing_required_key_raises_value_error_naming_the_field(
+        self, missing_key: str
+    ) -> None:
+        bad_raw = dict(self._COMPLETE_RAW)
+        del bad_raw[missing_key]
+        with pytest.raises(ValueError, match=missing_key):
+            Model.from_hf_config(raw_config=bad_raw, **self._BASE_KWARGS)
 
 
 class TestValidation:

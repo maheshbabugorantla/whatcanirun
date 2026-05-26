@@ -203,6 +203,31 @@ class Model(BaseModel):
         # gets a human-readable label.
         if display_name is None:
             display_name = hf_repo_id.rsplit("/", 1)[-1]
+        # Explicit upfront check on the required-key set, raising
+        # ValueError (NOT bare KeyError) with the missing field name.
+        # Reason: `HfModelSync.sync_all_tracked` catches
+        # `(ValueError, ValidationError, UnsupportedArchitectureFamily,
+        # ...)` for per-row skip-and-continue, but does NOT catch
+        # `KeyError`. A bare `raw_config["num_attention_heads"]`
+        # KeyError from a malformed upstream config would crash the
+        # whole batch sync instead of letting the offending row be
+        # skipped per spec/M03 § Failure modes. Listing the keys here
+        # also gives the caller a clearer error than a stray KeyError
+        # mid-projection.
+        _required_keys = (
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "hidden_size",
+            "max_position_embeddings",
+            "torch_dtype",
+        )
+        missing = [key for key in _required_keys if key not in raw_config]
+        if missing:
+            raise ValueError(
+                f"HF config for {hf_repo_id!r} (slug={slug!r}) missing required "
+                f"key(s) {missing!r}; raw_config retained for inspection."
+            )
         n_attention_heads = int(raw_config["num_attention_heads"])
         hidden_size = int(raw_config["hidden_size"])
         head_dim = int(raw_config.get("head_dim") or (hidden_size // n_attention_heads))
