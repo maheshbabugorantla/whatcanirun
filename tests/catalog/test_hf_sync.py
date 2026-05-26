@@ -799,7 +799,8 @@ class TestRepoIdValidation:
         that could traverse paths on huggingface.co, inject a query
         string, or change host semantics is rejected at the boundary.
         HF's documented format is `<namespace>/<name>` with each segment
-        matching `[A-Za-z0-9_.-]+`."""
+        matching at least one alphanumeric (preventing all-dot segments
+        like `.` / `..` that produce URL traversal sequences)."""
         with pytest.raises(ValueError, match="repo_id"):
             await sync.sync_model(
                 repo_id=bad_repo_id,
@@ -808,6 +809,50 @@ class TestRepoIdValidation:
                 total_params_b=70.6,
                 active_params_b=None,
             )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "ok_repo_id",
+        [
+            # Dot-prefixed segment WITH alphanumerics — the tightened
+            # regex must NOT over-reject this. HF allows repos like
+            # `.cache/foo` and dot-prefixed names; only all-dot
+            # segments (`.`, `..`, `...`) are the actual traversal
+            # vector. If the regex were narrowed to "no leading dot"
+            # we'd silently lock out legitimate HF repos. Pins the
+            # right behavior so a future regex tweak can't over-shoot.
+            ".hidden/legit",
+            "legit/.dotfile",
+            "vendor/v0.1.2",  # version-suffixed name
+        ],
+    )
+    async def test_accepts_dot_prefixed_segment_with_alphanumerics(
+        self, sync: HfModelSync, ok_repo_id: str
+    ) -> None:
+        # Mock so we can probe the validator without a real HF call.
+        # We expect EITHER a successful network call (intercepted by
+        # respx) OR a downstream non-ValueError-about-repo_id (e.g.
+        # connection refused if no respx mock matched). What we
+        # must NOT see is `ValueError(... repo_id ...)` from the
+        # boundary validator.
+        try:
+            await sync.sync_model(
+                repo_id=ok_repo_id,
+                slug="some-slug",
+                display_name="ignored",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+        except ValueError as exc:
+            if "repo_id" in str(exc):
+                raise AssertionError(
+                    f"validator over-rejected legitimate repo_id {ok_repo_id!r}: {exc}"
+                ) from exc
+        except Exception:
+            # Any other failure (httpx connection error etc.) means
+            # the validator let it through and the request reached
+            # the network layer — that's the behavior we want to pin.
+            pass
 
 
 # ---------------------------- end-to-end family auto-detection via HfModelSync
