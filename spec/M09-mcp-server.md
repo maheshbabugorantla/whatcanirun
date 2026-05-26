@@ -85,6 +85,63 @@ This server is designed to be honest, not optimistic. When two numbers disagree,
 
 ---
 
+## Unknown model handling
+
+When a user calls a tool (most commonly `budget_to_plan` or `find_cheapest_deployment`) for a model whatcanirun doesn't fully model, the response depends on which case applies. **All three cases are handled at the M09 layer — the underlying caches stay simple.**
+
+### Case 1 — In `seeds/tracked_models.yaml`, config not yet synced locally
+
+Lazy-sync transparently via `HfModelSync.sync_model(repo_id)` (M03). Tool then proceeds as normal. `trust_envelope.freshness.model_architecture` reflects the just-completed sync.
+
+No user-visible difference from a warm-cache request other than ~1s latency on first call.
+
+### Case 2 — In ComputePrices `/api/v1/llm-models`, NOT in `seeds/tracked_models.yaml`
+
+CP knows the model's pricing; we don't have architecture data. Return **partial** `CostCell` rows:
+
+- `price_per_m_input_usd`, `price_per_m_output_usd` populated from CP
+- `pricing_type` populated from CP
+- `fit_result = None`
+- `tps_estimate.source = "requires_measurement"`, `tps_estimate.confidence = 0.0`
+- `trust_envelope.confidence_breakdown.model_architecture = 0.0`
+- `trust_envelope.caveats` includes verbatim:
+  > "Architecture data not available for this model — only hosted-API pricing is shown. Fit-check and self-hosted throughput are not estimated. To enable full analysis, add an entry to your local `~/.config/whatcanirun/user_models.yaml` with the model's Hugging Face `repo_id`."
+
+The partial answer is honest — the user gets actionable pricing AND an explicit, named gap they can close themselves.
+
+### Case 3 — In NEITHER CP nor seeds (genuinely unknown to whatcanirun)
+
+Interactive. The tool returns a structured `UnknownModelResponse` instead of `BudgetPlanRow`s:
+
+```python
+class UnknownModelResponse(BaseModel):
+    requested_model: str
+    status: Literal["unknown_model"]
+    elicit_field: Literal["hf_repo_id"]
+    elicit_prompt: str = (
+        "I don't have this model in my catalog yet. If you can share the "
+        "Hugging Face repo_id (e.g. `meta-llama/Llama-3.3-70B-Instruct`), "
+        "I'll fetch its config and add it for this and future requests. "
+        "If the model isn't on a public Hugging Face repo, I won't be able "
+        "to estimate fit or throughput for it."
+    )
+    suggested_followups: list[str] = [
+        "list_catalog (to see what models are already supported)",
+        "budget_to_plan with a publicly tracked model_slug",
+    ]
+```
+
+The MCP client surfaces `elicit_prompt` to the user. Two outcomes:
+
+1. **User supplies a repo_id** → next tool call carries `model_slug=<requested>, hf_repo_id_hint=<supplied>`. M09 invokes `HfModelSync.sync_model(repo_id)`, persists the (slug, repo_id) pair to `~/.config/whatcanirun/user_models.yaml` (NOT `seeds/tracked_models.yaml` — project seeds stay pristine; user additions explicit), then re-runs the original tool. Subsequent requests for the same `model_slug` go straight through Case 1.
+
+2. **User can't supply a repo_id** (private model, doesn't know, etc.) → tool refuses with full `trust_envelope` naming exactly what's missing:
+   > "Cannot estimate inference cost for an unknown model without architecture data. Hugging Face is the only source we currently consume for `config.json`; if your model is hosted elsewhere or is private, file an issue at <https://github.com/maheshbabugorantla/whatcanirun/issues> describing your use case."
+
+The persistence file `~/.config/whatcanirun/user_models.yaml` shares the schema of `seeds/tracked_models.yaml` (slug → hf_repo_id, with optional `kv_cache_strategy_override`). M03's tracked-models loader reads BOTH files in order: `seeds/` first, then `~/.config/whatcanirun/user_models.yaml` (user additions can't override seeds, but can extend them).
+
+---
+
 ## Vertical slices
 
 1. **Slice A: FastMCP server skeleton** — `whatcanirun-mcp` starts, advertises capabilities, responds to `initialize` over stdio.
@@ -98,6 +155,13 @@ This server is designed to be honest, not optimistic. When two numbers disagree,
 9. **Slice I: /benchmark-on-budget prompt** — TDD: prompt template references the three tools in order and includes example arguments.
 10. **Slice J: TrustEnvelope builders** — `src/whatcanirun/trust/builders.py` with one per tool. Confidence breakdown computed correctly per domain, `confidence = min(breakdown.values())` enforced.
 11. **Slice K: Instructions string** — wired into FastMCP, exposed via standard protocol.
+12. **Slice L: Unknown-model dispatcher** — `find_cheapest_deployment` / `budget_to_plan` route by case:
+    - in seeds, not cached → lazy-sync (Case 1)
+    - in CP, not in seeds → partial CostCell with `model_architecture=0.0` confidence + named caveat (Case 2)
+    - in neither → return `UnknownModelResponse` with `elicit_field="hf_repo_id"` (Case 3, first call)
+    - same model + `hf_repo_id_hint` supplied → sync + persist to `~/.config/whatcanirun/user_models.yaml` + re-run (Case 3, second call)
+    - same model, no hint, user declined → refusal with full trust envelope.
+    Tested with stubbed HF responses; no live network in CI.
 
 ---
 
@@ -107,6 +171,7 @@ This server is designed to be honest, not optimistic. When two numbers disagree,
 - [ ] All 5 tools callable; smoke-tested via fixtures (no live network in CI).
 - [ ] Every tool response has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`.
 - [ ] `confidence == min(confidence_breakdown.values())` enforced by a property test on TrustEnvelope construction.
+- [ ] Unknown-model dispatcher covers all three cases (lazy-sync, partial-answer, interactive elicitation) with named caveats. User-supplied (slug, hf_repo_id) pairs persist to `~/.config/whatcanirun/user_models.yaml`, not `seeds/tracked_models.yaml`.
 - [ ] `budget_to_plan` golden path: `(budget_usd=20, model_slug="qwen-3-coder-30b")` returns ≥3 BudgetPlanRow, sorted ASC by `cost_per_m_output_usd`.
 - [ ] `cost-cells://current` materializes Parquet with `generated_at` and per-source freshness.
 - [ ] `cost-cells://provenance` contains AA attribution and ComputePrices disclaimer verbatim.
