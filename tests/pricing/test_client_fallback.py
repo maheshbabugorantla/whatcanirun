@@ -160,6 +160,28 @@ async def test_connect_error_with_empty_cache_raises(
         await fast_client.get_gpu_catalog()
 
 
+def _seed_cache_file(cache_dir: Path, endpoint: str, contents: str) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / f"{endpoint}.latest.json").write_text(contents)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_corrupt_cache_during_outage_raises_unavailable(
+    cache_dir: Path, fast_client: ComputePricesClient
+) -> None:
+    """If upstream is down AND the cached file exists but is corrupt,
+    the client must raise ComputePricesUnavailable — not surface a raw
+    JSONDecodeError or shape ValueError to callers, which would leak
+    implementation detail and break the trust envelope contract."""
+    _seed_cache_file(cache_dir, "gpus", "{not valid json")
+
+    respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(503, text="down"))
+
+    with pytest.raises(ComputePricesUnavailable):
+        await fast_client.get_gpu_catalog()
+
+
 # ------------------------------------------------------------- retry counts
 
 

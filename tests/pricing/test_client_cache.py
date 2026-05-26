@@ -131,6 +131,71 @@ async def test_cache_holds_for_catalogs_24h(cache_dir: Path) -> None:
     assert route.call_count == 1, "catalog cache <24h old must not refetch"
 
 
+# ---------------------------------------------------------- corrupt cache
+
+
+def _seed_cache_file(cache_dir: Path, endpoint: str, contents: str) -> Path:
+    """Write `contents` to `<cache_dir>/<endpoint>.latest.json` with
+    a fresh mtime. Kept out of async test bodies so ruff's ASYNC240
+    rule (no pathlib operations in async functions) isn't tripped on
+    what is plainly setup code."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / f"{endpoint}.latest.json"
+    path.write_text(contents)
+    return path
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_corrupt_cache_file_falls_through_to_upstream(cache_dir: Path) -> None:
+    """A corrupted latest.json (truncated write, hand-edit, disk
+    corruption) must not crash callers with an opaque JSONDecodeError.
+    The client treats it as a cache miss and refetches."""
+    payload = _payload("cp_gpus_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
+
+    # Fresh mtime so TTL would say "use cache" — shape check must override.
+    _seed_cache_file(cache_dir, "gpus", "{not valid json")
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    rows = await client.get_gpu_catalog()
+
+    assert len(rows) == 66
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_cache_with_missing_data_key_falls_through(cache_dir: Path) -> None:
+    """Decoded JSON is valid but doesn't carry `data` — same response:
+    treat as a cache miss, refetch."""
+    payload = _payload("cp_gpus_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
+
+    _seed_cache_file(cache_dir, "gpus", '{"meta": {"version": "v1"}}')
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    rows = await client.get_gpu_catalog()
+
+    assert len(rows) == 66
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_cache_with_non_list_data_falls_through(cache_dir: Path) -> None:
+    payload = _payload("cp_gpus_2026-05-26.json")
+    route = respx.get(f"{_BASE}/gpus").mock(return_value=httpx.Response(200, json=payload))
+
+    _seed_cache_file(cache_dir, "gpus", '{"data": {"oops": "not a list"}}')
+
+    client = ComputePricesClient(cache_dir=cache_dir)
+    rows = await client.get_gpu_catalog()
+
+    assert len(rows) == 66
+    assert route.called
+
+
 # -------------------------------------------------------- separate endpoints
 
 

@@ -199,11 +199,25 @@ class ComputePricesClient:
     def _read_cache(self, endpoint: str) -> dict[str, Any]:
         path = self._cache_path(endpoint)
         try:
-            return json.loads(path.read_text())  # type: ignore[no-any-return]
+            decoded = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
             raise ValueError(
                 f"ComputePrices {endpoint!r}: cache file at {path} unreadable: {exc}"
             ) from exc
+        # Cache files can be corrupted (truncated mid-write, hand-edited,
+        # disk corruption). Validate the same shape contract `_fetch_raw`
+        # enforces on live responses so callers never iterate something
+        # that isn't actually a row list.
+        if not isinstance(decoded, dict) or "data" not in decoded:
+            raise ValueError(
+                f"ComputePrices {endpoint!r}: cache file at {path} missing top-level `data`"
+            )
+        if not isinstance(decoded["data"], list):
+            raise ValueError(
+                f"ComputePrices {endpoint!r}: cache file at {path} has `data` of type "
+                f"{type(decoded['data']).__name__}, expected list"
+            )
+        return decoded
 
     def _write_cache(self, endpoint: str, payload: dict[str, Any]) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -261,26 +275,42 @@ class ComputePricesClient:
     async def _fetch_and_project[Row: _CpRow](
         self, endpoint: str, row_model: type[Row]
     ) -> list[Row]:
+        payload: dict[str, Any] | None = None
         if self._cache_age_within_ttl(endpoint):
-            payload = self._read_cache(endpoint)
-        else:
+            try:
+                payload = self._read_cache(endpoint)
+            except ValueError:
+                # Cache is corrupt or malformed — refetch as if the file
+                # never existed. Logging happens at the M08 layer where
+                # the trust envelope makes it actionable.
+                payload = None
+        if payload is None:
             try:
                 payload = await self._fetch_raw_with_retry(endpoint)
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 # Per ADR-013: serve last-good cache rather than fail outright.
-                # If even that is missing, the caller deserves an explicit
-                # signal (no silent empty result).
-                if self._cache_path(endpoint).exists() and _is_retryable_http_error(exc):
-                    payload = self._read_cache(endpoint)
-                elif _is_retryable_http_error(exc):
+                # If even that is missing OR corrupt, the caller deserves
+                # an explicit signal (no silent empty result, no leaked
+                # JSONDecodeError).
+                if not _is_retryable_http_error(exc):
+                    # 4xx etc. — surface the real error to the caller.
+                    raise
+                if self._cache_path(endpoint).exists():
+                    try:
+                        payload = self._read_cache(endpoint)
+                    except ValueError as cache_exc:
+                        raise ComputePricesUnavailable(
+                            f"ComputePrices {endpoint!r} unreachable after "
+                            f"{self._retry_attempts} attempts and the cached "
+                            f"file at {self._cache_path(endpoint)} is "
+                            f"unusable: {cache_exc}"
+                        ) from exc
+                else:
                     raise ComputePricesUnavailable(
                         f"ComputePrices {endpoint!r} unreachable after "
                         f"{self._retry_attempts} attempts and no cached "
                         f"snapshot exists at {self._cache_path(endpoint)}"
                     ) from exc
-                else:
-                    # 4xx etc. — surface the real error to the caller.
-                    raise
             else:
                 self._write_cache(endpoint, payload)
                 self._write_snapshot(endpoint, payload)
