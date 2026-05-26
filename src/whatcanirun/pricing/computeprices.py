@@ -22,6 +22,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from whatcanirun.pricing.projections import (
     GpuCatalogRow,
@@ -30,6 +36,25 @@ from whatcanirun.pricing.projections import (
     LlmPriceRow,
     _CpRow,
 )
+
+
+class ComputePricesUnavailable(Exception):  # noqa: N818  (name fixed by spec/M02-computeprices-client.md)
+    """Raised when ComputePrices is unreachable AND no cached fallback
+    exists. The caller is expected to surface this to the user with a
+    trust envelope explaining why no number can be returned (ADR-013).
+    """
+
+
+def _is_retryable_http_error(exc: BaseException) -> bool:
+    """True for transient errors worth retrying — 429, 5xx, or any
+    connection-layer error. 4xx (other than 429) is a client bug and
+    retrying it would just burn quota.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return isinstance(exc, httpx.RequestError)
+
 
 CP_BASE_URL = "https://www.computeprices.com/api/v1"
 DEFAULT_TIMEOUT_S = 30.0
@@ -65,11 +90,20 @@ class ComputePricesClient:
         *,
         base_url: str = CP_BASE_URL,
         timeout_s: float = DEFAULT_TIMEOUT_S,
+        retry_attempts: int = 4,
+        retry_wait_min_s: float = 1.0,
+        retry_wait_max_s: float = 4.0,
     ) -> None:
         self.cache_dir = cache_dir
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
+        # Retries: total attempts incl. the first one (spec: initial + 3
+        # retries). Tests pass wait_*_s=0 so the suite doesn't sleep ~7s
+        # for every fallback path exercised.
+        self._retry_attempts = retry_attempts
+        self._retry_wait_min_s = retry_wait_min_s
+        self._retry_wait_max_s = retry_wait_max_s
 
     # ---------------------------------------------------------------- public API
 
@@ -94,7 +128,10 @@ class ComputePricesClient:
         return headers
 
     async def _fetch_raw(self, endpoint: str) -> dict[str, Any]:
-        """Single live GET. No retry, no cache. Slices D-E layer those on."""
+        """Single live GET. No retry, no cache. Retry wrapper is
+        `_fetch_raw_with_retry`; cache lookups happen in
+        `_fetch_and_project`.
+        """
         url = f"{self._base_url}/{endpoint}"
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.get(url, headers=self._headers())
@@ -103,6 +140,29 @@ class ComputePricesClient:
         if not isinstance(payload, dict) or "data" not in payload:
             raise ValueError(f"ComputePrices {endpoint!r}: response missing top-level `data` array")
         return payload
+
+    async def _fetch_raw_with_retry(self, endpoint: str) -> dict[str, Any]:
+        """Live GET with tenacity retry on 429/5xx/connection errors.
+
+        4xx other than 429 is treated as a client bug and bubbles
+        immediately so the caller sees the real error rather than the
+        timed-out retry budget.
+        """
+        retryer = AsyncRetrying(
+            stop=stop_after_attempt(self._retry_attempts),
+            wait=wait_exponential(min=self._retry_wait_min_s, max=self._retry_wait_max_s),
+            retry=retry_if_exception(_is_retryable_http_error),
+            reraise=True,
+        )
+        async for attempt in retryer:
+            with attempt:
+                return await self._fetch_raw(endpoint)
+        # Unreachable: `reraise=True` makes the loop either return or
+        # re-raise the last exception. Present to satisfy mypy's
+        # exhaustiveness check on the loop body.
+        raise AssertionError(
+            "AsyncRetrying with reraise=True exhausted without raising"
+        )  # pragma: no cover
 
     # ---------------------------------------------------------------- cache
 
@@ -165,7 +225,24 @@ class ComputePricesClient:
         if self._cache_age_within_ttl(endpoint):
             payload = self._read_cache(endpoint)
         else:
-            payload = await self._fetch_raw(endpoint)
-            self._write_cache(endpoint, payload)
-            self._write_snapshot(endpoint, payload)
+            try:
+                payload = await self._fetch_raw_with_retry(endpoint)
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                # Per ADR-013: serve last-good cache rather than fail outright.
+                # If even that is missing, the caller deserves an explicit
+                # signal (no silent empty result).
+                if self._cache_path(endpoint).exists() and _is_retryable_http_error(exc):
+                    payload = self._read_cache(endpoint)
+                elif _is_retryable_http_error(exc):
+                    raise ComputePricesUnavailable(
+                        f"ComputePrices {endpoint!r} unreachable after "
+                        f"{self._retry_attempts} attempts and no cached "
+                        f"snapshot exists at {self._cache_path(endpoint)}"
+                    ) from exc
+                else:
+                    # 4xx etc. — surface the real error to the caller.
+                    raise
+            else:
+                self._write_cache(endpoint, payload)
+                self._write_snapshot(endpoint, payload)
         return [row_model.project(item) for item in payload["data"]]
