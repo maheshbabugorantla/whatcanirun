@@ -235,6 +235,162 @@ async def test_passes_hf_token_when_provided(cache_dir: Path, llama_config: dict
     assert info_route.calls.last.request.headers.get("authorization") == "Bearer hf_test123"
 
 
+# ----------------------------------------------- cache shape resilience
+
+
+class TestCacheShapeResilience:
+    """The cache file at `<slug>.model.json` can be corrupt or out of
+    schema for several reasons (truncated write, a previous version of
+    the projection, manual tampering). The cache-hit path must NEVER
+    crash on these — it must transparently refetch."""
+
+    @pytest.fixture
+    def seed_corrupt_cache(self, cache_dir: Path):
+        def _seed(slug: str, contents: str) -> None:
+            (cache_dir / "huggingface").mkdir(parents=True, exist_ok=True)
+            (cache_dir / "huggingface" / f"{slug}.model.json").write_text(contents)
+
+        return _seed
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_non_dict_cached_payload_triggers_refetch(
+        self, cache_dir: Path, llama_config: dict[str, Any], seed_corrupt_cache
+    ) -> None:
+        """`json.loads` of `[]`, `"oops"`, `42` returns truthy non-dict
+        values; the previous code called `.get(...)` and raised
+        AttributeError. Cache-hit path must isinstance-check first."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+        )
+        config_route = respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        seed_corrupt_cache("llama-3-3-70b", '"this is a string, not a dict"')
+
+        sync = HfModelSync(cache_dir=cache_dir)
+        model = await sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        assert model.slug == "llama-3-3-70b"
+        assert config_route.called  # refetched
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_validation_error_on_cached_payload_triggers_refetch(
+        self, cache_dir: Path, llama_config: dict[str, Any], seed_corrupt_cache
+    ) -> None:
+        """A cached file with the right SHA but missing required Model
+        fields (e.g. a future Model schema added a field) would crash
+        with ValidationError. Cache-hit path must catch and refetch."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+        )
+        config_route = respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        # Dict with matching SHA but nothing else — fails Model.model_validate
+        seed_corrupt_cache(
+            "llama-3-3-70b",
+            json.dumps({"hf_revision_sha": sha, "oops": "missing required fields"}),
+        )
+
+        sync = HfModelSync(cache_dir=cache_dir)
+        model = await sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        assert model.slug == "llama-3-3-70b"
+        assert config_route.called
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_truncated_json_cached_payload_triggers_refetch(
+        self, cache_dir: Path, llama_config: dict[str, Any], seed_corrupt_cache
+    ) -> None:
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+        )
+        config_route = respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        seed_corrupt_cache("llama-3-3-70b", "{not valid json")
+
+        sync = HfModelSync(cache_dir=cache_dir)
+        model = await sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        assert model.slug == "llama-3-3-70b"
+        assert config_route.called
+
+
+class TestUpstreamShapeValidation:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_info_payload_with_non_string_sha_rejected(self, cache_dir: Path) -> None:
+        """If HF returns `sha: 12345` (int) or `sha: null`, `str(payload['sha'])`
+        previously produced `"12345"` or `"None"` and proceeded with a
+        wrong URL. Validate at the boundary."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": 12345, "modelId": repo_id})
+        )
+
+        sync = HfModelSync(cache_dir=cache_dir)
+        with pytest.raises(ValueError, match="sha"):
+            await sync.sync_model(
+                repo_id=repo_id,
+                slug="llama-3-3-70b",
+                display_name="Llama",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_config_payload_missing_architectures_rejected(self, cache_dir: Path) -> None:
+        """A config.json without `architectures` would silently route to
+        family `"other"`. Surface the missing required key clearly."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+        )
+        respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json={"num_hidden_layers": 80})
+        )
+
+        sync = HfModelSync(cache_dir=cache_dir)
+        with pytest.raises(ValueError, match="architectures"):
+            await sync.sync_model(
+                repo_id=repo_id,
+                slug="llama-3-3-70b",
+                display_name="Llama",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
+
+
 # ------------------------------------ slug + repo_id validation at boundary
 
 

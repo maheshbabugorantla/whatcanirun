@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from whatcanirun.catalog.hf_model import KvCacheStrategy, Model
 
@@ -100,16 +101,12 @@ class HfModelSync:
                 "(HF's documented `<namespace>/<name>` format)"
             )
         info = await self._fetch_info(repo_id)
-        sha = str(info["sha"])
+        sha = info["sha"]
 
         cache_path = self._hf_dir / f"{slug}.model.json"
-        if cache_path.exists():
-            try:
-                cached = json.loads(cache_path.read_text())
-            except json.JSONDecodeError:
-                cached = None
-            if cached and cached.get("hf_revision_sha") == sha:
-                return Model.model_validate(cached)
+        cached_model = self._read_cached_model(cache_path, sha)
+        if cached_model is not None:
+            return cached_model
 
         raw_config = await self._fetch_config(repo_id, sha)
         # ADR-015 invariant #2: persist the raw upstream response verbatim
@@ -147,6 +144,34 @@ class HfModelSync:
         return self._hf_dir / f"{slug}.config.json"
 
     @staticmethod
+    def _read_cached_model(cache_path: Path, expected_sha: str) -> Model | None:
+        """Return the cached Model when it exists, parses as a dict with
+        a matching `hf_revision_sha`, AND validates against the current
+        Model schema. Any other state — file missing, malformed JSON,
+        non-dict decoded value, missing/mismatched SHA, or
+        ValidationError from a schema migration — returns None so the
+        caller transparently refetches. The cache must NEVER make the
+        callable harder to use than no cache at all.
+        """
+        if not cache_path.exists():
+            return None
+        try:
+            decoded = json.loads(cache_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        if decoded.get("hf_revision_sha") != expected_sha:
+            return None
+        try:
+            return Model.model_validate(decoded)
+        except ValidationError:
+            # Schema drift: a future Model field that the cached row
+            # doesn't carry. Treat as cache miss; refetch produces a
+            # fresh, schema-current Model.
+            return None
+
+    @staticmethod
     def _write_atomic(path: Path, contents: str) -> None:
         """Tmp + rename so a crash mid-write can't leave a half-written
         file that the next read would refuse to parse."""
@@ -168,6 +193,14 @@ class HfModelSync:
         payload = response.json()
         if not isinstance(payload, dict) or "sha" not in payload:
             raise ValueError(f"HF model info for {repo_id!r} missing required `sha` field")
+        # HF's documented contract: sha is a non-empty string (commit hash).
+        # A non-string would silently coerce via str() and produce a malformed
+        # URL (`.../raw/None/config.json`) — fail loudly here instead.
+        if not isinstance(payload["sha"], str) or not payload["sha"]:
+            raise ValueError(
+                f"HF model info for {repo_id!r}: `sha` must be a non-empty "
+                f"string, got {type(payload['sha']).__name__} {payload['sha']!r}"
+            )
         return payload
 
     async def _fetch_config(self, repo_id: str, sha: str) -> dict[str, Any]:
@@ -178,4 +211,14 @@ class HfModelSync:
         payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError(f"HF config.json for {repo_id!r}@{sha} is not a JSON object")
+        # `architectures` is the discriminator family detection reads;
+        # without it, the projection silently routes to "other" and the
+        # caller can't tell whether HF dropped the field or we got an
+        # unexpected payload shape. Surface the missing key at the
+        # boundary so the error names the real fault.
+        if "architectures" not in payload:
+            raise ValueError(
+                f"HF config.json for {repo_id!r}@{sha} missing required "
+                "`architectures` field (cannot detect model family)"
+            )
         return payload
