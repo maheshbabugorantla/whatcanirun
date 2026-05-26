@@ -15,6 +15,7 @@ ComputePrices client uses for `COMPUTEPRICES_API_KEY`.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
 import logging
@@ -53,6 +54,14 @@ class HfModelSyncUnavailable(Exception):  # noqa: N818 (parallel to ComputePrice
     cached `Model` exists for the slug. Mirrors M02's
     `ComputePricesUnavailable` shape: caller is expected to surface
     this through a trust envelope explaining the gap (ADR-013)."""
+
+
+# Bearer-token character validation. Header values must not contain CR,
+# LF, NUL, or other non-printable control chars — RFC 7230 forbids them
+# in field values, and an unguarded \r\n in a bearer token could enable
+# CRLF response-splitting on HTTP clients that don't validate (most
+# modern ones do, but defense-in-depth at the boundary is cheap).
+_HF_TOKEN_ILLEGAL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _is_retryable_http_error(exc: BaseException) -> bool:
@@ -101,6 +110,13 @@ class HfModelSync:
         if hf_token is None:
             env_token = os.environ.get("HF_TOKEN", "").strip()
             hf_token = env_token or None
+        if hf_token is not None and _HF_TOKEN_ILLEGAL_CHARS_RE.search(hf_token):
+            raise ValueError(
+                "HF_TOKEN contains illegal control characters (CR / LF / NUL / "
+                "other non-printable ASCII). A token with embedded `\\r\\n` "
+                "could enable a CRLF header-injection in some HTTP transports; "
+                "rejecting at the boundary."
+            )
         self._hf_token = hf_token
         self._timeout_s = timeout_s
         # Retries: total attempts incl. the first one (spec: initial + 3
@@ -389,9 +405,33 @@ class HfModelSync:
     @staticmethod
     def _write_atomic(path: Path, contents: str) -> None:
         """Tmp + rename so a crash mid-write can't leave a half-written
-        file that the next read would refuse to parse."""
+        file that the next read would refuse to parse.
+
+        Uses O_EXCL | O_NOFOLLOW on the tmp open: a pre-existing file
+        or symlink at the predictable `<path>.tmp` location causes the
+        write to fail (FileExistsError) rather than silently follow
+        the redirect. This defends against a local attacker planting
+        a symlink at the tmp path to redirect the write to arbitrary
+        files the process user can write (config files, ssh keys, etc).
+        """
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(contents)
+        # os.O_EXCL refuses if the file already exists; os.O_NOFOLLOW
+        # refuses to follow a symlink. Combined they prevent the
+        # TOCTOU redirect scenario.
+        fd = os.open(
+            tmp,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(contents)
+        except BaseException:
+            # If the write itself failed, clean up the empty tmp we just
+            # created so the next attempt can re-open it cleanly.
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            raise
         tmp.replace(path)
 
     def _headers(self) -> dict[str, str]:
