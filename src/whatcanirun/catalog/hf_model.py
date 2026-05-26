@@ -78,6 +78,28 @@ def detect_architecture_family(raw_config: dict[str, Any]) -> ArchitectureFamily
     return "other"
 
 
+# Per-family KV cache strategy default. Most families use standard GQA;
+# DeepSeek-V3 uses Multi-head Latent Attention (MLA) — distinct enough
+# that M07's KV-cache size math has to take a different branch. New
+# families with non-GQA attention get a row here AND extend the
+# `KvCacheStrategy` Literal.
+_DEFAULT_KV_CACHE_STRATEGY: dict[ArchitectureFamily, KvCacheStrategy] = {
+    "deepseek_v3": "mla",
+    # All other families fall through to "standard_gqa".
+}
+
+
+def detect_kv_cache_strategy(architecture_family: ArchitectureFamily) -> KvCacheStrategy:
+    """Derive the KV cache strategy from the model's architecture family.
+
+    Returns `"standard_gqa"` for every family except those that need a
+    different KV-cache shape (currently just `deepseek_v3` → `"mla"`).
+    Tracked-models YAML rows can override via `kv_cache_strategy_override`
+    when an explicit pin is safer than auto-detection.
+    """
+    return _DEFAULT_KV_CACHE_STRATEGY.get(architecture_family, "standard_gqa")
+
+
 class Model(BaseModel):
     """One row of the HF-synced model catalog."""
 
@@ -126,28 +148,38 @@ class Model(BaseModel):
         hf_revision_sha: str,
         last_synced_at: datetime,
         architecture_family: ArchitectureFamily | None = None,
-        kv_cache_strategy: KvCacheStrategy = "standard_gqa",
+        kv_cache_strategy: KvCacheStrategy | None = None,
     ) -> Model:
-        """Build a `Model` from a standard-GQA HF `config.json`.
+        """Build a `Model` from an HF `config.json`.
 
-        `architecture_family` defaults to `None` and is auto-detected
-        via `detect_architecture_family(raw_config)`. Pass an explicit
-        value to override the detection — useful for fine-tunes that
-        didn't update their `architectures` string, or to pin family
-        via `seeds/tracked_models.yaml`'s override workflow.
+        `architecture_family` defaults to `None` and is auto-detected via
+        `detect_architecture_family(raw_config)`. `kv_cache_strategy`
+        defaults to `None` and is auto-derived from the detected family
+        via `detect_kv_cache_strategy()` — so `deepseek_v3` configs
+        produce `kv_cache_strategy="mla"` while everything else falls
+        through to `"standard_gqa"`. Pass either kwarg explicitly to
+        override the detection (e.g. for a fine-tune that didn't update
+        its `architectures` string, or via `seeds/tracked_models.yaml`'s
+        `kv_cache_strategy_override` workflow).
 
         Family-specific extractors (DeepSeek MLA, Mixtral MoE) live in
         `catalog/families/` and call into this with the appropriate
-        family + strategy overrides.
+        family + strategy overrides when the auto-detection isn't
+        sufficient.
 
         Required raw_config keys: `num_hidden_layers`, `num_attention_heads`,
         `num_key_value_heads`, `hidden_size`, `max_position_embeddings`,
         `torch_dtype`. `head_dim` is read if present, else derived as
         `hidden_size // num_attention_heads` (the convention older Llama
-        configs follow).
+        configs follow). MLA configs (DeepSeek) keep their specialized
+        keys (`kv_lora_rank`, `qk_rope_head_dim`, `qk_nope_head_dim`,
+        `v_head_dim`) in `raw_config`; M07's MLA branch reads from
+        there directly.
         """
         if architecture_family is None:
             architecture_family = detect_architecture_family(raw_config)
+        if kv_cache_strategy is None:
+            kv_cache_strategy = detect_kv_cache_strategy(architecture_family)
         n_attention_heads = int(raw_config["num_attention_heads"])
         hidden_size = int(raw_config["hidden_size"])
         head_dim = int(raw_config.get("head_dim") or (hidden_size // n_attention_heads))
