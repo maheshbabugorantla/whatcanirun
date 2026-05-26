@@ -135,26 +135,39 @@ class HfModelSync:
     async def sync_model(
         self,
         *,
-        repo_id: str,
         slug: str,
-        display_name: str,
-        total_params_b: float,
-        active_params_b: float | None,
+        repo_id: str,
+        display_name: str | None = None,
+        total_params_b: float | None = None,
+        active_params_b: float | None = None,
         kv_cache_strategy_override: KvCacheStrategy | None = None,
     ) -> Model:
         """Fetch + project + cache one model.
 
-        `total_params_b` and `active_params_b` are explicit kwargs
-        because the HF config.json doesn't carry them (the model card
-        does, or safetensors metadata via a separate fetch). The
-        `sync_all_tracked` caller passes them through from the
-        tracked-models YAML row.
+        The minimum invocation is `sync_model(slug=..., repo_id=...)`
+        — that's the lazy-sync primitive M09 calls for Case 1 (model
+        in tracked-models set, not yet cached) and Case 3 (post-
+        elicitation sync after the user supplies an unknown model's
+        HF repo_id). `slug` is the CP join key (can't be derived from
+        `repo_id` — different vocabulary); everything else has a
+        sensible None default.
 
-        Both `slug` and `repo_id` are validated at this boundary — `slug`
-        is interpolated into the cache filename and `repo_id` into the
-        HF URL path, so a malformed value here is a path-traversal /
-        URL-injection vector. Invalid values raise `ValueError` BEFORE
-        any HTTP call or filesystem write.
+        `display_name` falls back to the HF repo_id's last segment
+        when not supplied. `total_params_b` / `active_params_b` stay
+        None when not supplied — neither lives in HF config.json, so
+        we don't fabricate them. Downstream M07 treats null total
+        params as `requires_measurement` per ADR-010, preserving the
+        trust contract.
+
+        `sync_all_tracked` passes the YAML row's explicit values for
+        all of these so project-controlled tracked rows still get
+        precise metadata.
+
+        Both `slug` and `repo_id` are validated at this boundary —
+        `slug` is interpolated into the cache filename and `repo_id`
+        into the HF URL path, so a malformed value here is a
+        path-traversal / URL-injection vector. Invalid values raise
+        `ValueError` BEFORE any HTTP call or filesystem write.
         """
         if not _SAFE_SLUG_RE.match(slug):
             raise ValueError(

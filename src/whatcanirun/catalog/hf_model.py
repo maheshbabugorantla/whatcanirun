@@ -124,9 +124,14 @@ class Model(BaseModel):
     display_name: str
 
     # Parameter counts. total is memory-driving; active_params_b is
-    # compute-driving for MoE (None for dense).
-    total_params_b: float
-    active_params_b: float | None
+    # compute-driving for MoE (None for dense). Both Optional because
+    # neither lives in HF `config.json` — they come from the model
+    # card or safetensors index. tracked_models.yaml carries them for
+    # project-controlled rows; M09's lazy-sync flow (Case 1 / Case 3
+    # of unknown-model handling) leaves them None and M07 then routes
+    # affected cells to `requires_measurement` per ADR-010.
+    total_params_b: float | None = None
+    active_params_b: float | None = None
 
     # Architecture dimensions projected for M06 / M07.
     n_layers: int
@@ -153,13 +158,13 @@ class Model(BaseModel):
         *,
         slug: str,
         hf_repo_id: str,
-        display_name: str,
-        total_params_b: float,
-        active_params_b: float | None,
         raw_config: dict[str, Any],
         raw_safetensors_meta: dict[str, Any],
         hf_revision_sha: str,
         last_synced_at: datetime,
+        display_name: str | None = None,
+        total_params_b: float | None = None,
+        active_params_b: float | None = None,
         architecture_family: ArchitectureFamily | None = None,
         kv_cache_strategy: KvCacheStrategy | None = None,
     ) -> Model:
@@ -193,6 +198,11 @@ class Model(BaseModel):
             architecture_family = detect_architecture_family(raw_config)
         if kv_cache_strategy is None:
             kv_cache_strategy = detect_kv_cache_strategy(architecture_family)
+        # display_name falls back to the HF repo_id's last segment so
+        # M09's lazy-sync flow (slug + repo_id only, no metadata) still
+        # gets a human-readable label.
+        if display_name is None:
+            display_name = hf_repo_id.rsplit("/", 1)[-1]
         n_attention_heads = int(raw_config["num_attention_heads"])
         hidden_size = int(raw_config["hidden_size"])
         head_dim = int(raw_config.get("head_dim") or (hidden_size // n_attention_heads))

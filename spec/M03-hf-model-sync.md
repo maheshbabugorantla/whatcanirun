@@ -25,7 +25,42 @@ class HfModelSync:
 
     def __init__(self, cache_dir: Path, hf_token: str | None = None): ...
 
-    async def sync_model(self, repo_id: str) -> Model: ...
+    async def sync_model(
+        self,
+        *,
+        slug: str,
+        repo_id: str,
+        display_name: str | None = None,
+        total_params_b: float | None = None,
+        active_params_b: float | None = None,
+        kv_cache_strategy_override: KvCacheStrategy | None = None,
+    ) -> Model:
+        """Lazy-sync primitive. Minimum invocation is
+        `sync_model(slug=..., repo_id=...)` — that's what M09's
+        unknown-model dispatcher (Case 1 / Case 3) calls when it knows
+        the user-facing slug + HF repo_id but nothing else. `slug` is
+        the cost-cells join key and can't be auto-derived from
+        `repo_id` (different vocabulary); everything else has sensible
+        defaults.
+
+          - `display_name` falls back to `repo_id`'s last segment
+            (e.g. `meta-llama/Llama-3.3-70B-Instruct` →
+            `Llama-3.3-70B-Instruct`).
+          - `total_params_b` / `active_params_b` stay `None` when not
+            supplied — neither lives in HF `config.json`. M07 treats
+            null total params as `requires_measurement` per ADR-010,
+            preserving the trust contract.
+
+        `sync_all_tracked` calls this with all kwargs populated from
+        the YAML row, so project-controlled tracked rows still get
+        precise metadata.
+
+        Both `slug` and `repo_id` are validated at this boundary — they
+        are interpolated into cache paths and HF URLs respectively, so
+        a malformed value here is a path-traversal / URL-injection
+        vector. Invalid values raise `ValueError` BEFORE any HTTP call
+        or filesystem write.
+        """
 
     async def sync_all_tracked(
         self,

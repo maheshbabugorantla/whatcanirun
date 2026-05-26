@@ -583,6 +583,42 @@ class TestUpstreamShapeValidation:
 # ------------------------------------ slug + repo_id validation at boundary
 
 
+# ----------------------------- minimal sync_model invocation (M09 lazy-sync)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_model_with_only_slug_and_repo_id(
+    cache_dir: Path, llama_config: dict[str, Any]
+) -> None:
+    """M09's Case 1 lazy-sync (and Case 3 post-elicitation sync) calls
+    `sync_model(slug=<user slug>, repo_id=<HF repo_id>)` with nothing
+    else — the user hasn't told the MCP server anything about params or
+    display name, and `tracked_models.yaml` doesn't (and shouldn't)
+    carry the unknown model yet. The public lazy-sync primitive must
+    support this minimum invocation."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc"
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    model = await sync.sync_model(slug="llama-3-3-70b", repo_id=repo_id)
+
+    assert model.slug == "llama-3-3-70b"
+    assert model.hf_repo_id == repo_id
+    # display_name derives from repo_id last segment when not supplied.
+    assert model.display_name == "Llama-3.3-70B-Instruct"
+    # total_params_b stays None when caller doesn't supply it — M07
+    # treats null as requires_measurement per ADR-010.
+    assert model.total_params_b is None
+    assert model.active_params_b is None
+
+
 class TestSlugValidation:
     @pytest.fixture
     def sync(self, cache_dir: Path) -> HfModelSync:

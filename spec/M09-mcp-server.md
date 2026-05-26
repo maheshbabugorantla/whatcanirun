@@ -49,7 +49,7 @@ A FastMCP server exposing the public product surface. Stdio transport. Six tools
 
 
 6. **`resolve_model(model_slug, hf_repo_id)`** → `ResolveModelResult`.
-   Persists the `(model_slug, hf_repo_id)` mapping to `~/.config/whatcanirun/user_models.yaml` and triggers `HfModelSync.sync_model(hf_repo_id)`. Used by MCP clients after they receive an `UnknownModelResponse` and elicit the `hf_repo_id` from the user.
+   Persists the `(model_slug, hf_repo_id)` mapping to `~/.config/whatcanirun/user_models.yaml` and triggers `HfModelSync.sync_model(slug=model_slug, repo_id=hf_repo_id)` (the minimum lazy-sync invocation defined in M03 — display_name + params default to None, with `display_name` falling back to `repo_id`'s last segment and null params routing affected M07 cells to `requires_measurement` per ADR-010). Used by MCP clients after they receive an `UnknownModelResponse` and elicit the `hf_repo_id` from the user.
 
    ```python
    class ResolveModelResult(BaseModel):
@@ -112,7 +112,7 @@ When a user calls a tool for a model whatcanirun doesn't fully model, dispatch d
 
 ### Case 1 — In the merged tracked-models set, config not yet synced locally
 
-Lazy-sync transparently via `HfModelSync.sync_model(repo_id)` (M03). Tool then proceeds as normal. `trust_envelope.freshness["huggingface"]` reflects the just-completed sync (per-source timestamp, not per-domain — `freshness` is keyed by upstream, not by `confidence_breakdown` domain).
+Lazy-sync transparently via `HfModelSync.sync_model(slug=resolved.slug, repo_id=resolved.hf_repo_id)` (M03). Tool then proceeds as normal. `trust_envelope.freshness["huggingface"]` reflects the just-completed sync (per-source timestamp, not per-domain — `freshness` is keyed by upstream, not by `confidence_breakdown` domain).
 
 No user-visible difference from a warm-cache request other than ~1s latency on first call.
 
