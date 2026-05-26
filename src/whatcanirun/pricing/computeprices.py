@@ -16,6 +16,7 @@ requests go through CP's anonymous 60/hr-per-IP tier. ADR-001.
 from __future__ import annotations
 
 import datetime as dt
+import gzip
 import json
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,27 @@ class ComputePricesClient:
         tmp.write_text(json.dumps(payload))
         tmp.replace(path)
 
+    # ----------------------------------------------------------- snapshots
+
+    def _snapshots_dir(self, endpoint: str) -> Path:
+        return self.cache_dir / f"{endpoint}.snapshots"
+
+    def _write_snapshot(self, endpoint: str, payload: dict[str, Any]) -> Path:
+        """Persist a gzipped snapshot per fetch.
+
+        Filename is the UTC ISO timestamp with `:` replaced by `-` so the
+        name is valid on every supported filesystem (Windows in particular).
+        Used by Slice E for upstream-down fallback and by Slice F for the
+        30-day pruning policy.
+        """
+        snapshots = self._snapshots_dir(endpoint)
+        snapshots.mkdir(parents=True, exist_ok=True)
+        ts = _now().strftime("%Y-%m-%dT%H-%M-%SZ")
+        path = snapshots / f"{ts}.json.gz"
+        with gzip.open(path, "wt") as f:
+            json.dump(payload, f)
+        return path
+
     async def _fetch_and_project[Row: _CpRow](
         self, endpoint: str, row_model: type[Row]
     ) -> list[Row]:
@@ -145,4 +167,5 @@ class ComputePricesClient:
         else:
             payload = await self._fetch_raw(endpoint)
             self._write_cache(endpoint, payload)
+            self._write_snapshot(endpoint, payload)
         return [row_model.project(item) for item in payload["data"]]
