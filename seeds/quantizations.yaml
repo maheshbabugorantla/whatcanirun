@@ -1,18 +1,87 @@
-# Quantization schemes — fields from Inference Engineering book §5.1.1
-# Spec: spec/M01-catalog-supplements.md
+# Quantization schemes — sourced from Inference Engineering §5.1.1.
+# Spec: spec/M01-catalog-supplements.md   |   ADRs: ADR-005, ADR-015
 #
-# Schema:
+# Schema (src/whatcanirun/catalog/seed_schemas.py:Quantization):
 #   slug                       (str)
 #   bits_per_weight            (int)
 #   kv_cache_bits_default      (int)
-#   introduced_architecture    (str)  e.g. "Hopper", "Blackwell"
+#   introduced_architecture    (str)
 #   notes                      (str)
+#   experimental               (bool, default false)
 #
-# Target: 10 rows. M01 fills these in from book §5.1.1 Table 5-1.
+# `experimental: true` marks formats whose accept-criteria semantics
+# (numerical accuracy at scale, kernel coverage, vendor support) are
+# not yet pinned down by measured cost cells. M07 (tps_estimator) and
+# M10 (benchmark cells) are expected to filter rows on this flag so
+# the v1 plan output never anchors throughput on an unsettled format.
+---
 
-# Example row:
-# - slug: fp16
-#   bits_per_weight: 16
-#   kv_cache_bits_default: 16
-#   introduced_architecture: Pascal
-#   notes: "IEEE 754 half-precision; native on all data-center GPUs"
+# --- Stable formats: native tensor-core support on at least one
+#     production GPU, well-understood accuracy/perf trade-offs.
+
+- slug: fp16
+  bits_per_weight: 16
+  kv_cache_bits_default: 16
+  introduced_architecture: Pascal
+  notes: "IEEE 754 half-precision. Native on every data-center GPU since Pascal; reference baseline."
+
+- slug: bf16
+  bits_per_weight: 16
+  kv_cache_bits_default: 16
+  introduced_architecture: Ampere
+  notes: "Google Brain float16; wider dynamic range than fp16, same memory cost. Native tensor cores from Ampere onward."
+
+- slug: fp8
+  bits_per_weight: 8
+  kv_cache_bits_default: 8
+  introduced_architecture: Hopper
+  notes: "E4M3 / E5M2 dual-format. Native FP8 tensor cores from Hopper (H100); MI300X adds matrix-FP8 on CDNA 3."
+
+- slug: int8
+  bits_per_weight: 8
+  kv_cache_bits_default: 8
+  introduced_architecture: Turing
+  notes: "Integer 8-bit. SmoothQuant / GPTQ / AWQ produce int8 weights with calibration; KV cache int8 widely supported."
+
+- slug: int4
+  bits_per_weight: 4
+  kv_cache_bits_default: 8
+  introduced_architecture: Turing
+  notes: "Integer 4-bit weight quantization (GPTQ, AWQ, GGUF variants). KV cache typically left at int8/fp16 due to accuracy hit; per book §5.1.1 default kept at 8."
+
+- slug: fp4
+  bits_per_weight: 4
+  kv_cache_bits_default: 8
+  introduced_architecture: Blackwell
+  notes: "Native FP4 tensor cores introduced with Blackwell (B100/B200/GB200). KV cache still typically fp8/int8 at deployment time; default kept at 8 per Inference Engineering §5.1.1."
+
+- slug: fp6
+  bits_per_weight: 6
+  kv_cache_bits_default: 8
+  introduced_architecture: Blackwell
+  notes: "Microscaling FP6 (E2M3 / E3M2). Blackwell supports as a software-emulated path on top of FP8 tensor cores; useful as a midpoint between FP4 accuracy and FP8 stability."
+
+# --- Experimental: format itself is implemented in silicon or kernels,
+#     but accept-criteria for production inference are not yet settled
+#     by measured cells. M07 / M10 filter on `experimental: true`.
+
+- slug: nvfp4
+  bits_per_weight: 4
+  kv_cache_bits_default: 8
+  introduced_architecture: Blackwell
+  notes: "NVIDIA-specific FP4 variant with per-block scaling factors. Accuracy at 70B+ scale not yet pinned by published cells."
+  experimental: true
+
+- slug: mxfp4
+  bits_per_weight: 4
+  kv_cache_bits_default: 8
+  introduced_architecture: Blackwell
+  notes: "OCP Microscaling FP4 (32-element shared exponent). Standard adopted Mid-2024; vendor kernel coverage still maturing."
+  experimental: true
+
+- slug: mxfp8
+  bits_per_weight: 8
+  kv_cache_bits_default: 8
+  introduced_architecture: Blackwell
+  notes: "OCP Microscaling FP8 (32-element shared exponent). Marketed as drop-in replacement for vanilla FP8 with better accuracy; production kernels still landing."
+  experimental: true
