@@ -35,6 +35,19 @@ ArchitectureFamily = Literal[
 KvCacheStrategy = Literal["standard_gqa", "mla", "sliding_window"]
 
 
+class UnsupportedArchitectureFamily(ValueError):  # noqa: N818 (matches spec's exception name)
+    """Raised when a model's `architectures[0]` doesn't match any
+    family in `_FAMILY_PREFIX_MAP` (i.e. detection returns `"other"`).
+
+    The caller — typically `HfModelSync.sync_model` — re-raises this
+    after persisting the raw config.json verbatim, so `sync_all_tracked`
+    can log + skip the offending model and continue with the rest of
+    the catalog. Wrapping `ValueError` so existing
+    `except ValueError:` branches treat unknown-family as a soft error
+    rather than a crash.
+    """
+
+
 # Suffix mapping for `raw_config["architectures"][0]`. A startswith check
 # is unambiguous for the families we track today because HF arch strings
 # are descriptive enough that no prefix collides. When CP / HF introduces

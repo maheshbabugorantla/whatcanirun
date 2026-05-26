@@ -31,7 +31,12 @@ from tenacity import (
     wait_exponential,
 )
 
-from whatcanirun.catalog.hf_model import KvCacheStrategy, Model
+from whatcanirun.catalog.hf_model import (
+    KvCacheStrategy,
+    Model,
+    UnsupportedArchitectureFamily,
+    detect_architecture_family,
+)
 
 HF_API_BASE = "https://huggingface.co/api/models"
 HF_RAW_BASE = "https://huggingface.co"
@@ -177,9 +182,28 @@ class HfModelSync:
         # ADR-015 invariant #2: persist the raw upstream response verbatim
         # BEFORE parsing, so a future projection bug or schema-evolution
         # check can re-read the exact bytes HF returned. The projection
-        # (Model JSON) is also cached so cache-hit reads are fast.
+        # (Model JSON) is also cached so cache-hit reads are fast. Raw
+        # is persisted BEFORE the family check below, so even on the
+        # unsupported-family skip path the investigator can read what
+        # HF actually returned.
         self._hf_dir.mkdir(parents=True, exist_ok=True)
         self._write_atomic(self._raw_path(slug), json.dumps(raw_config))
+
+        # Unsupported architecture family → raise so `sync_all_tracked`
+        # can log + skip + continue with the next model rather than
+        # silently caching a Model with family="other" that downstream
+        # M06 / M07 don't know how to interpret. Per spec/M03 § Failure
+        # modes: "Unknown architecture family: skip with logged warning,
+        # raw_config still cached" — both halves satisfied here.
+        detected_family = detect_architecture_family(raw_config)
+        if detected_family == "other":
+            archs = raw_config.get("architectures") or []
+            head = archs[0] if archs else "<missing architectures>"
+            raise UnsupportedArchitectureFamily(
+                f"unsupported architecture family for {repo_id!r} (slug={slug!r}): "
+                f"architectures[0]={head!r} doesn't match any known prefix. "
+                f"Raw config persisted at {self._raw_path(slug)} for inspection."
+            )
 
         model = Model.from_hf_config(
             slug=slug,
