@@ -1,18 +1,43 @@
 # Models tracked by M03 (HF sync).
 # Spec: spec/M03-hf-model-sync.md
+# Loader: src/whatcanirun/catalog/loaders.py::load_tracked_models
 #
-# Schema:
-#   slug                              (str)   Joins ComputePrices /api/v1/llm-models
-#   hf_repo_id                        (str)   Hugging Face repo identifier
-#   kv_cache_strategy_override        (enum, optional)  standard_gqa | mla | sliding_window
-#                                              Overrides config.json auto-detection
+# Schema (TrackedModelRow in src/whatcanirun/catalog/seed_schemas.py):
+#   slug                         (str, required)   Joins ComputePrices /api/v1/llm-models
+#   hf_repo_id                   (str, required)   Hugging Face repo identifier (namespace/name)
+#   display_name                 (str, required)   Human-friendly name for tool output
+#   total_params_b               (float, required) Total parameters in billions (model card)
+#   active_params_b              (float, optional) Active params for MoE (None for dense)
+#   kv_cache_strategy_override   (enum, optional)  standard_gqa | mla | sliding_window
+#                                                  Overrides config-based auto-detection
+#   notes                        (str, optional)   Free-form context
 #
-# Target: ~30 rows. M03 fills these in. Examples:
-#
-# - slug: llama-3-3-70b
-#   hf_repo_id: "meta-llama/Llama-3.3-70B-Instruct"
-# - slug: deepseek-v3
-#   hf_repo_id: "deepseek-ai/DeepSeek-V3"
-#   kv_cache_strategy_override: mla
-# - slug: gpt-oss-120b
-#   hf_repo_id: "openai/gpt-oss-120b"
+# Spec target: 30 rows. v1 ships with 3 (one per family we have HF
+# fixtures for); the other 27 are tracked as M03 carry-forward debt
+# on spec/M07 until M07 starts needing them. Adding rows here without
+# also capturing the HF config fixture under tests/fixtures/ would
+# break the offline test suite — keep both in sync.
+---
+
+# Llama family (standard GQA).
+- slug: llama-3-3-70b
+  hf_repo_id: meta-llama/Llama-3.3-70B-Instruct
+  display_name: Llama 3.3 70B Instruct
+  total_params_b: 70.6
+  notes: "Hopper-era reference for standard GQA throughput."
+
+# DeepSeek (MLA — special attention; auto-detected via DeepseekV3 family).
+- slug: deepseek-v3
+  hf_repo_id: deepseek-ai/DeepSeek-V3
+  display_name: DeepSeek-V3
+  total_params_b: 671.0
+  active_params_b: 37.0
+  notes: "256 routed experts, 8 active per token. Uses MLA, not standard GQA."
+
+# Mixtral (MoE — sparse experts; standard GQA for attention).
+- slug: mixtral-8x22b
+  hf_repo_id: mistralai/Mixtral-8x22B-Instruct-v0.1
+  display_name: Mixtral 8x22B Instruct v0.1
+  total_params_b: 141.0
+  active_params_b: 39.0
+  notes: "8 experts per layer, 2 active per token."

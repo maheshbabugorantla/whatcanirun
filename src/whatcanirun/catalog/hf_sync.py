@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -37,6 +38,10 @@ from whatcanirun.catalog.hf_model import (
     UnsupportedArchitectureFamily,
     detect_architecture_family,
 )
+from whatcanirun.catalog.loaders import load_tracked_models
+from whatcanirun.catalog.seed_schemas import TrackedModelRow
+
+_log = logging.getLogger(__name__)
 
 HF_API_BASE = "https://huggingface.co/api/models"
 HF_RAW_BASE = "https://huggingface.co"
@@ -225,6 +230,104 @@ class HfModelSync:
         )
         self._write_atomic(cache_path, model.model_dump_json())
         return model
+
+    async def sync_all_tracked(
+        self,
+        tracked_yaml_path: Path,
+        user_yaml_path: Path | None = None,
+    ) -> list[Model]:
+        """Sync every model in the merged tracked-models set.
+
+        Reads `tracked_yaml_path` (always — project seeds) and, when
+        present, `user_yaml_path` (per-user runtime additions written
+        by M09's `resolve_model` tool). The user file is OPTIONAL; if
+        it doesn't exist, only seeds are synced.
+
+        Conflict policy on duplicate slugs: project seeds win, the
+        user entry is dropped with a logged warning. This is asymmetric
+        on purpose — a user can extend the catalog with new slugs CP
+        knows about but our seeds don't yet, but they can't silently
+        redirect a project-controlled mapping.
+
+        Per-row error handling so one bad model doesn't abort the
+        whole sync:
+          - `UnsupportedArchitectureFamily` → log warning, skip the
+            row, continue. Raw config persisted per ADR-015.
+          - `HfModelSyncUnavailable` → log warning, skip. The model
+            simply won't appear in the returned list this run.
+          - `httpx.HTTPStatusError` for 4xx (e.g. 404 deleted repo,
+            401 missing token for a gated model) → log warning, skip.
+          - Anything else propagates (programmer error).
+
+        Returns the list of `Model` rows successfully synced. Callers
+        compare `len(result) < len(merged_set)` to detect that some
+        rows were skipped and report accordingly.
+        """
+        rows = self._load_merged_tracked_rows(tracked_yaml_path, user_yaml_path)
+        synced: list[Model] = []
+        for row in rows:
+            try:
+                model = await self.sync_model(
+                    repo_id=row.hf_repo_id,
+                    slug=row.slug,
+                    display_name=row.display_name,
+                    total_params_b=row.total_params_b,
+                    active_params_b=row.active_params_b,
+                    kv_cache_strategy_override=row.kv_cache_strategy_override,
+                )
+            except UnsupportedArchitectureFamily as exc:
+                _log.warning(
+                    "skip %r (slug=%r): unsupported architecture family — %s",
+                    row.hf_repo_id,
+                    row.slug,
+                    exc,
+                )
+                continue
+            except HfModelSyncUnavailable as exc:
+                _log.warning(
+                    "skip %r (slug=%r): HF unreachable and no cached fallback — %s",
+                    row.hf_repo_id,
+                    row.slug,
+                    exc,
+                )
+                continue
+            except httpx.HTTPStatusError as exc:
+                # 4xx other than 429 escaped the retry wrapper (401 gated,
+                # 404 deleted, 403 forbidden). Log + skip rather than
+                # aborting the whole catalog sync.
+                _log.warning(
+                    "skip %r (slug=%r): HF returned %d — %s",
+                    row.hf_repo_id,
+                    row.slug,
+                    exc.response.status_code,
+                    exc,
+                )
+                continue
+            synced.append(model)
+        return synced
+
+    @staticmethod
+    def _load_merged_tracked_rows(
+        tracked_yaml_path: Path, user_yaml_path: Path | None
+    ) -> list[TrackedModelRow]:
+        """Load project seeds + (optional) user extension; project wins
+        on slug conflicts."""
+        rows = load_tracked_models(tracked_yaml_path)
+        if user_yaml_path is None or not user_yaml_path.exists():
+            return rows
+        seen = {row.slug for row in rows}
+        for user_row in load_tracked_models(user_yaml_path):
+            if user_row.slug in seen:
+                _log.warning(
+                    "user_models.yaml entry for slug=%r dropped: "
+                    "project seeds win on conflict (mapped to %r in seeds)",
+                    user_row.slug,
+                    next(r.hf_repo_id for r in rows if r.slug == user_row.slug),
+                )
+                continue
+            rows.append(user_row)
+            seen.add(user_row.slug)
+        return rows
 
     # --------------------------------------------------------------- internals
 

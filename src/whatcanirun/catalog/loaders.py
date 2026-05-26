@@ -13,7 +13,11 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from whatcanirun.catalog.seed_schemas import GpuSupplement, Quantization
+from whatcanirun.catalog.seed_schemas import (
+    GpuSupplement,
+    Quantization,
+    TrackedModelRow,
+)
 
 
 class SeedLoadError(Exception):
@@ -63,3 +67,9 @@ def load_gpu_supplements(path: Path) -> list[GpuSupplement]:
 def load_quantizations(path: Path) -> list[Quantization]:
     """Load `seeds/quantizations.yaml` into validated `Quantization` rows."""
     return _load_rows(path, Quantization)
+
+
+def load_tracked_models(path: Path) -> list[TrackedModelRow]:
+    """Load `seeds/tracked_models.yaml` (or a user_models.yaml extension
+    file) into validated `TrackedModelRow` rows."""
+    return _load_rows(path, TrackedModelRow)

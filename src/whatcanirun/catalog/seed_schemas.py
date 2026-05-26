@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from whatcanirun.catalog.hf_model import KvCacheStrategy
+
 FormFactor = Literal["SXM", "PCIe", "NVL", "OAM"]
 
 
@@ -52,3 +54,25 @@ class Quantization(BaseModel):
     introduced_architecture: str
     notes: str
     experimental: bool = Field(default=False)
+
+
+class TrackedModelRow(BaseModel):
+    """One row of `seeds/tracked_models.yaml` (or the per-user
+    `~/.config/whatcanirun/user_models.yaml` extension file).
+
+    Maps a ComputePrices `slug` to a Hugging Face `hf_repo_id` and
+    carries the parameter counts (`total_params_b`, optional
+    `active_params_b` for MoE) that config.json doesn't itself
+    publish — those come from the model card / safetensors index and
+    get hand-curated into the YAML row.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str
+    hf_repo_id: str
+    display_name: str
+    total_params_b: float
+    active_params_b: float | None = None
+    kv_cache_strategy_override: KvCacheStrategy | None = None
+    notes: str = ""
