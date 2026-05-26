@@ -18,3 +18,9 @@ Captured upstream API responses, used by all tests in place of live network call
 - Commit a fixture containing a real API key.
 - Commit a fixture from a production account with PII.
 - Use live HTTP in tests (CI runs without keys; tests will silently 401).
+
+## Current fixtures
+
+| File | Source | Captured by | Notes |
+|---|---|---|---|
+| `cp_gpus_2026-05-26.json` | `GET https://www.computeprices.com/api/v1/gpus` (anonymous) | `scripts/capture_cp_gpus_fixture.py` | 66 GPU rows. Used by M01 `tests/catalog/test_seed_join.py` to assert every `seeds/gpus_supplement.yaml` slug joins a real CP row. Data © ComputePrices, public catalog; refer to their site for the canonical attribution language we propagate in trust envelopes (ADR-001). |
