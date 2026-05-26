@@ -90,7 +90,13 @@ class HfModelSync:
             raw_safetensors_meta={},
             hf_revision_sha=sha,
             last_synced_at=dt.datetime.now(dt.UTC),
-            kv_cache_strategy=kv_cache_strategy_override or "standard_gqa",
+            # Pass the override through as-is. When the caller didn't supply
+            # one (None), `Model.from_hf_config` auto-derives the strategy
+            # from `architecture_family` (so DeepSeek-V3 configs become
+            # `kv_cache_strategy="mla"` rather than the standard_gqa default).
+            # Bypassing this with a literal `or "standard_gqa"` fallback
+            # would silently mis-classify MLA models.
+            kv_cache_strategy=kv_cache_strategy_override,
         )
         self._hf_dir.mkdir(parents=True, exist_ok=True)
         # Atomic write per the same tmp+rename pattern M02 uses for its

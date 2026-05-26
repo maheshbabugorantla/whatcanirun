@@ -34,6 +34,11 @@ def llama_config() -> dict[str, Any]:
     return json.loads((_FIXTURES / "hf_llama-3-3-70b_config.json").read_text())
 
 
+@pytest.fixture(scope="module")
+def deepseek_config() -> dict[str, Any]:
+    return json.loads((_FIXTURES / "hf_deepseek-v3_config.json").read_text())
+
+
 @pytest.fixture
 def cache_dir(tmp_path: Path) -> Path:
     return tmp_path / "cp"
@@ -194,6 +199,42 @@ async def test_passes_hf_token_when_provided(cache_dir: Path, llama_config: dict
     )
 
     assert info_route.calls.last.request.headers.get("authorization") == "Bearer hf_test123"
+
+
+# ---------------------------- end-to-end family auto-detection via HfModelSync
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_deepseek_yields_mla_kv_cache_strategy(
+    cache_dir: Path, deepseek_config: dict[str, Any]
+) -> None:
+    """The MLA family auto-detection (Slice D) must flow through the
+    HfModelSync code path — not just direct `Model.from_hf_config` calls.
+    Without this end-to-end coverage, the production caller could
+    bypass auto-detection by passing a non-None default and the test
+    suite would not catch it."""
+    repo_id = "deepseek-ai/DeepSeek-V3"
+    sha = "abc"
+
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=deepseek_config)
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    model = await sync.sync_model(
+        repo_id=repo_id,
+        slug="deepseek-v3",
+        display_name="DeepSeek-V3",
+        total_params_b=671.0,
+        active_params_b=37.0,
+    )
+
+    assert model.architecture_family == "deepseek_v3"
+    assert model.kv_cache_strategy == "mla"
 
 
 @pytest.mark.asyncio
