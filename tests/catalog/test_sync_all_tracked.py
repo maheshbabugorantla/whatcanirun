@@ -216,6 +216,46 @@ async def test_hf_404_row_skipped_others_continue(
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_bad_yaml_row_value_error_skips_not_aborts(
+    fast_sync: HfModelSync, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A YAML row that passes loader validation but trips
+    sync_model's slug/repo_id boundary check (e.g. via M09's
+    user_models.yaml where a user supplied an unsafe value) raises
+    ValueError. sync_all_tracked must skip + log, not abort the
+    whole batch."""
+    yaml_path = tmp_path / "tracked.yaml"
+    _write_yaml(
+        yaml_path,
+        [
+            {
+                "slug": "llama-3-3-70b",
+                "hf_repo_id": "meta-llama/Llama-3.3-70B-Instruct",
+                "display_name": "Llama 3.3 70B Instruct",
+                "total_params_b": 70.6,
+            },
+            {
+                # Loader accepts this (TrackedModelRow doesn't validate
+                # repo_id format), then sync_model's regex rejects it.
+                "slug": "weird-slug",
+                "hf_repo_id": "no-slash-here",
+                "display_name": "Bad",
+                "total_params_b": 1.0,
+            },
+        ],
+    )
+    _stub_hf("meta-llama/Llama-3.3-70B-Instruct", "shaA", _llama_config())
+
+    with caplog.at_level(logging.WARNING):
+        models = await fast_sync.sync_all_tracked(yaml_path)
+
+    assert len(models) == 1
+    assert models[0].slug == "llama-3-3-70b"
+    assert any("weird-slug" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_user_file_extends_project_seeds(fast_sync: HfModelSync, tmp_path: Path) -> None:
     """User-supplied entries with slugs the project seeds don't carry
     are added to the merged set and synced."""
@@ -299,9 +339,18 @@ async def test_seed_wins_on_slug_conflict_with_user_file(
     assert len(models) == 1
     assert models[0].hf_repo_id == "meta-llama/Llama-3.3-70B-Instruct"
     assert models[0].total_params_b == 70.6  # the project value, not 999
-    assert any(
-        "llama-3-3-70b" in r.message and "project seeds win" in r.message for r in caplog.records
-    )
+    # Warning identifies BOTH the seed value (what's being used) AND
+    # the user's attempted value (so an investigator can see the
+    # attempted redirect, not just the safe outcome).
+    relevant = [
+        r.message
+        for r in caplog.records
+        if "llama-3-3-70b" in r.message and "project seeds win" in r.message
+    ]
+    assert relevant, "expected the seed-wins warning"
+    joined = " ".join(relevant)
+    assert "evil/Hijacked-Model" in joined, "user's attempted hf_repo_id must appear in the log"
+    assert "meta-llama/Llama-3.3-70B-Instruct" in joined
 
 
 @pytest.mark.asyncio

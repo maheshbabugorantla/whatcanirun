@@ -319,6 +319,23 @@ class HfModelSync:
                     exc,
                 )
                 continue
+            except (ValueError, ValidationError) as exc:
+                # Per-row config-shape or boundary-validation failure
+                # (bad slug / repo_id format, malformed upstream sha,
+                # missing required config field, Model schema mismatch).
+                # sync_model deliberately raises these with diagnostic
+                # detail; sync_all_tracked is where we choose to be
+                # lenient so one malformed row doesn't abort the whole
+                # catalog. Includes both hf_repo_id and slug so a
+                # malicious user_models.yaml row's attempted values
+                # show up in the log.
+                _log.warning(
+                    "skip %r (slug=%r): row failed validation — %s",
+                    row.hf_repo_id,
+                    row.slug,
+                    exc,
+                )
+                continue
             synced.append(model)
         return synced
 
@@ -334,11 +351,13 @@ class HfModelSync:
         seen = {row.slug for row in rows}
         for user_row in load_tracked_models(user_yaml_path):
             if user_row.slug in seen:
+                seed_repo_id = next(r.hf_repo_id for r in rows if r.slug == user_row.slug)
                 _log.warning(
-                    "user_models.yaml entry for slug=%r dropped: "
-                    "project seeds win on conflict (mapped to %r in seeds)",
+                    "user_models.yaml entry for slug=%r dropped: project seeds win "
+                    "on conflict (user attempted hf_repo_id=%r; seeds map to %r)",
                     user_row.slug,
-                    next(r.hf_repo_id for r in rows if r.slug == user_row.slug),
+                    user_row.hf_repo_id,
+                    seed_repo_id,
                 )
                 continue
             rows.append(user_row)
