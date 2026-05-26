@@ -26,8 +26,35 @@ class HfModelSync:
     def __init__(self, cache_dir: Path, hf_token: str | None = None): ...
 
     async def sync_model(self, repo_id: str) -> Model: ...
-    async def sync_all_tracked(self, tracked_yaml_path: Path) -> list[Model]: ...
+
+    async def sync_all_tracked(
+        self,
+        tracked_yaml_path: Path,
+        user_yaml_path: Path | None = None,
+    ) -> list[Model]:
+        """Sync every model in the merged tracked-models set.
+
+        Reads `tracked_yaml_path` (always — project seeds) and, when
+        present, `user_yaml_path` (per-user runtime additions written
+        by M09's `resolve_model` tool). The user file is OPTIONAL; if
+        it doesn't exist, only seeds are synced. Behavior on slug
+        conflicts: project seeds win — a user entry with the same
+        slug as a seed entry is dropped with a logged warning so user
+        files can't silently shadow project-controlled mappings.
+
+        See `spec/M09-mcp-server.md` § "Unknown model handling" for the
+        consumer of this merged list (the M09 dispatcher passes a
+        single combined `list[Model]` to its in-memory catalog).
+        """
 ```
+
+### User-extension file
+
+`seeds/tracked_models.yaml` is project-controlled and committed. The optional `~/.config/whatcanirun/user_models.yaml` is per-user, NOT committed, and accumulates entries that M09's `resolve_model(model_slug, hf_repo_id)` tool appends when the user supplies a Hugging Face repo_id for an unknown model.
+
+Both files share the same row schema (`slug`, `hf_repo_id`, optional `kv_cache_strategy_override`, optional `display_name`). The user file goes under XDG `~/.config/<app>/` rather than the cache dir so it survives a cache wipe (it's user data, not derived state).
+
+Conflict policy: when a slug appears in both files, the project seed wins. This is asymmetric on purpose — a user can't accidentally redirect a tracked model's HF repo, but they CAN extend the set with new slugs CP knows about but our seeds don't yet (Case 2 / Case 3 of [M09's unknown-model dispatch](M09-mcp-server.md#unknown-model-handling)).
 
 ### Pydantic projection (ADR-015 — `raw_config` preserves everything)
 
@@ -170,6 +197,7 @@ Each family has its own quirk. Extraction logic in `src/whatcanirun/catalog/fami
 - [ ] Schema-evolution test (`@pytest.mark.schema_evolution`) passes — unknown config field preserved.
 - [ ] Unknown family logs warning, does not crash sync of other models.
 - [ ] No live HF network calls in CI (use stubbed `huggingface_hub` client + fixture configs).
+- [ ] `sync_all_tracked()` accepts an optional `user_yaml_path`; when supplied AND the file exists, entries are merged with project seeds. Slug conflicts log a warning and the seed entry wins. A test seeds two YAML files with one overlapping slug + one user-only slug and asserts the seed entry's `hf_repo_id` is used while the user-only slug is added to the result.
 
 ---
 

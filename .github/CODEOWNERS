@@ -1,0 +1,9 @@
+# Repository code owners.
+#
+# Owners listed here are automatically requested for review on any
+# pull request that touches matching files. The `*` pattern below
+# applies to every file in the repo.
+#
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+*  @maheshbabugorantla

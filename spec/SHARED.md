@@ -38,6 +38,11 @@ ConfidenceDomain = Literal[
     "throughput",           # TpsEstimate.confidence for this cell
     "model_architecture",   # HF config.json freshness + family extraction success
     "gpu_specs",            # ComputePrices catalog completeness + supplement YAML coverage
+    "workload_assumption",  # how grounded the assumed (avg_input_tokens, avg_output_tokens)
+                            # are — user-elicited or argument-supplied = 0.95; silent default
+                            # = 0.2; omit the key when no workload assumption was made.
+                            # Only populated by tools that synthesize derived counts from a
+                            # workload (e.g. budget_to_plan's est_total_prompts).
     "freshness",            # weakest-link cache age across all contributing sources
 ]
 
@@ -64,6 +69,11 @@ A plan with `pricing=0.9, fit_check=0.85, throughput=0.0` (requires_measurement)
 - `bandwidth_heuristic_single_stream`: 0.6 — batch=1 only
 - `requires_measurement`: 0.0 — no number returned at all
 - `datasheet_yaml` for GPU specs domain: 0.99 — facts
+- `workload_assumption` domain:
+  - user explicitly supplied custom `avg_input_tokens` + `avg_output_tokens`: 1.0
+  - user elicited a `workload_profile_slug` (interactive flow) OR client passed it as a tool argument: 0.95
+  - server fell back to a silent default profile: 0.2  ← intentionally low so `confidence = min(...)` forces the LLM client to relay that the prompt count is hearsay
+  - tool returned no derived prompt count (e.g. `find_cheapest_deployment`): omit the `workload_assumption` key entirely
 
 **No throughput number returns confidence > 0.95 unless it came from `own_measured_benchmark`.** GPU specs (different domain) can reach 0.99.
 
@@ -122,7 +132,7 @@ Used verbatim in code, tests, commit messages, PR titles, issue bodies.
 
 - **Cost cell** — `(gpu, provider, model, quant, deployment_mode, batch, ctx) → (hourly_usd, decode_tps, cost_per_m_output_usd, trust_envelope)`. Atomic output unit.
 - **Trust envelope** — `TrustEnvelope` Pydantic model. Required on every numerical tool response.
-- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`.
+- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `workload_assumption`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`. `workload_assumption` is only populated on responses that synthesize derived counts from a workload (e.g. `BudgetPlanRow.est_total_prompts`); omitted entirely otherwise. See the `ConfidenceDomain` Literal above for the per-domain semantics and the Calibration section for value ranges.
 - **Deployment mode** — `cloud_gpu_rental`, `hosted_api_token`. (v2 adds `on_prem` with `tco_treatment` subfield.) The earlier 5-mode taxonomy is deprecated.
 - **Op-point** — `(batch_size, context_length)` tuple.
 - **Fit check** — Pure-math VRAM verdict. Returns `FitResult` with `weight_gb`, `kv_cache_gb`, `framework_overhead_gb`, `headroom_gb`, `blocking_reasons`, `sufficiency_caveat`. Never just a bool.
@@ -145,7 +155,7 @@ whatcanirun/
 │   ├── inference/             # fit_check, tps_estimator (M06, M07)
 │   ├── plan/                  # budget_planner, cost_cells join (M08)
 │   ├── trust/                 # TrustEnvelope + per-tool builders
-│   └── mcp_tools/             # The 5 MCP tool definitions (M09)
+│   └── mcp_tools/             # The 6 MCP tool definitions (M09)
 ├── seeds/
 │   ├── gpus_supplement.yaml
 │   ├── quantizations.yaml
