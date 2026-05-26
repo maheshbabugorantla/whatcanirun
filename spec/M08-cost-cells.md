@@ -24,11 +24,11 @@ This split is enforced by a grep test: no SQL strings in the tool call path.
 ```python
 class CostCell(BaseModel):
     # Identifiers
-    gpu_slug: str
+    gpu_slug: str | None             # null for hosted_api_token (no GPU)
     provider_slug: str
     model_slug: str
-    quant_slug: str
-    tp_size: int
+    quant_slug: str | None           # null for hosted_api_token (provider's choice, not disclosed)
+    tp_size: int | None              # null for hosted_api_token (tensor parallelism is provider-internal)
     batch_size: int
     context_length: int
     deployment_mode: Literal["cloud_gpu_rental", "hosted_api_token"]

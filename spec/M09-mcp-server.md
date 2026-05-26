@@ -113,13 +113,30 @@ No user-visible difference from a warm-cache request other than ~1s latency on f
 
 ### Case 2 — Known to ComputePrices (catalog + prices), NOT in our tracked-models set
 
-CP knows the model's hosted-API pricing; we don't have architecture data. Return **partial** `CostCell` rows with `deployment_mode="hosted_api_token"`:
+CP knows the model's hosted-API pricing; we don't have architecture data. Return **partial** `CostCell` rows with `deployment_mode="hosted_api_token"`. The complete field map (consult M08's CostCell schema for the union — `gpu_slug`, `quant_slug`, `tp_size` are nullable, see M08 for the rationale):
 
+Identifiers:
+- `gpu_slug = None` (no GPU — hosted API).
+- `quant_slug = None` (provider's choice, not disclosed by CP).
+- `tp_size = None` (tensor parallelism is provider-internal).
+- `provider_slug` populated from the `LlmPriceRow.provider_slug` of the chosen quote.
+- `model_slug` is the requested slug (echoed back).
+- `batch_size`, `context_length` echoed from the tool's request (still relevant for `est_total_prompts` math even though they don't drive hosted-API price).
+- `deployment_mode = "hosted_api_token"`.
+
+Pricing:
+- `hourly_usd = None` (no GPU rental).
+- `pricing_type = None` (M08's `pricing_type` is the GPU `on_demand|spot` enum; LLM hosted-API has its own `standard|batch` enum which travels in `trust_envelope.assumptions["llm_pricing_tier"]` instead, to avoid the enum collision).
 - `price_per_m_input_usd`, `price_per_m_output_usd` populated from CP's `/api/v1/llm-prices` (the model's existence is confirmed via `/api/v1/llm-models`; the dollar values come from the prices endpoint — M02's `LlmPriceRow` projection).
-- `hourly_usd = None` (no GPU rental for hosted API).
-- `pricing_type = None` (CostCell's `pricing_type` is the GPU `on_demand|spot` enum; LLM hosted-API has its own `standard|batch` enum which travels in `trust_envelope.assumptions["llm_pricing_tier"]` instead, to avoid the enum collision).
+
+Throughput + fit:
+- `decode_tps = None`.
+- `tps_estimate.source = "requires_measurement"`, `tps_estimate.confidence = 0.0`, `tps_estimate.refusal_reason` cites the missing architecture data.
 - `fit_result = None`.
-- `tps_estimate.source = "requires_measurement"`, `tps_estimate.confidence = 0.0`.
+- `cost_per_m_output_usd_self_hosted = None`.
+
+Availability + trust:
+- `availability_modeled = False`; default `availability_caveat` applies.
 - `trust_envelope.confidence_breakdown["model_architecture"] = 0.0`.
 - `trust_envelope.freshness["computeprices"]` populated; `freshness["huggingface"]` absent because no HF data was consumed.
 - `trust_envelope.caveats` includes verbatim:
@@ -155,8 +172,9 @@ The MCP client surfaces `elicit_prompt` to the user. Two outcomes:
 
 1. **User supplies a repo_id** → client invokes the dedicated `resolve_model(model_slug, hf_repo_id)` tool (see Public surface §6). On success, the client re-invokes the original tool with the same `model_slug` and gets a normal result (Case 1 path).
 
-2. **User can't supply a repo_id** (private model, doesn't know, etc.) → tool refuses with full `trust_envelope` naming exactly what's missing:
-   > "Cannot estimate inference cost for an unknown model without architecture data. Hugging Face is the only source we currently consume for `config.json`; if your model is hosted elsewhere or is private, file an issue at <https://github.com/maheshbabugorantla/whatcanirun/issues> describing your use case."
+2. **User can't supply a repo_id** (private model, doesn't know, etc.) → MCP client stops here. There is no second tool call — `UnknownModelResponse` is an elicitation, not a refusal that travels back through the tool. The client relays the `elicit_prompt`'s framing to the user and explains that without a Hugging Face `repo_id` whatcanirun has no path to estimating fit or throughput; if the model is hosted elsewhere or is private, the user can file an issue at <https://github.com/maheshbabugorantla/whatcanirun/issues>.
+
+   Note that `UnknownModelResponse` deliberately does NOT carry a `trust_envelope`. Per the trust contract in `spec/SHARED.md`, only **numerical** tool responses must carry one (it wraps numbers with sources/confidence/caveats; an elicitation has no numbers to wrap). The "named gap" the trust contract requires is carried by `elicit_prompt` text and the absence of any numerical result — both are honest signals to the client that whatcanirun cannot help.
 
 ### The merged tracked-models set
 
@@ -195,7 +213,7 @@ The merging is M03's responsibility — see `spec/M03-hf-model-sync.md` § "User
 
 - [ ] `whatcanirun-mcp` starts, completes MCP handshake, advertises capabilities.
 - [ ] All 6 tools callable; smoke-tested via fixtures (no live network in CI).
-- [ ] Every tool response has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`.
+- [ ] Every **numerical** tool response (and every CostCell / BudgetPlanRow / FitResult / DeploymentComparison contained in one) has a populated `trust_envelope` with all 6 domains present in `confidence_breakdown`. Non-numerical responses (`UnknownModelResponse`, `ResolveModelResult` when `status="resolved"`) do not — per `spec/SHARED.md`, the trust envelope wraps numbers; an elicitation or a successful resolution has none to wrap.
 - [ ] `confidence == min(confidence_breakdown.values())` enforced by a property test on TrustEnvelope construction.
 - [ ] Unknown-model dispatcher covers all three cases (lazy-sync, partial-answer, interactive elicitation) with named caveats. `resolve_model(model_slug, hf_repo_id)` persists user-supplied pairs to `~/.config/whatcanirun/user_models.yaml`, not `seeds/tracked_models.yaml`.
 - [ ] M03's `sync_all_tracked()` reads from BOTH `seeds/tracked_models.yaml` AND `~/.config/whatcanirun/user_models.yaml` (when present) — the merged-loader contract is part of M03's surface, not M09's; see `spec/M03-hf-model-sync.md` § "User-extension file".
