@@ -72,6 +72,7 @@ ALLOWED_DOMAINS=(
 
   # Project data sources (upstream APIs)
   "computeprices.com"
+  "www.computeprices.com"  # actual host serving /api/v1/* — `api.computeprices.com` returns 404 and the apex routes elsewhere
   "api.computeprices.com"
   "artificialanalysis.ai"
   "huggingface.co"
