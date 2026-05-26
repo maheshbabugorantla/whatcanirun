@@ -83,12 +83,18 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
 _SAFE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 # Hugging Face's documented repo_id grammar: <namespace>/<name>, each
-# segment matching ASCII alphanumerics + `._-`. Rejecting anything else
-# at the boundary prevents URL-path traversal (`foo/../bar`), query
-# string injection (`?token=`), userinfo segments (`@evil.com/x`), and
-# extra slashes that would target an unrelated HF endpoint with the
-# user's bearer token attached.
-_SAFE_REPO_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+# segment matching ASCII alphanumerics + `._-`. Each segment MUST
+# contain at least one alphanumeric character (the
+# `[A-Za-z0-9_.-]*[A-Za-z0-9][A-Za-z0-9_.-]*` shape) so dot-only
+# segments like `.`, `..`, `...` are rejected outright — they would
+# otherwise interpolate into the URL path as traversal components
+# (`https://huggingface.co/api/models/../admin` normalizes to a
+# different HF endpoint with the user's bearer token still attached).
+# Rejecting at the boundary also blocks query string injection
+# (`?token=`), userinfo segments (`@evil.com/x`), and extra slashes
+# that would target an unrelated HF endpoint.
+_REPO_SEGMENT_RE = r"[A-Za-z0-9_.-]*[A-Za-z0-9][A-Za-z0-9_.-]*"
+_SAFE_REPO_ID_RE = re.compile(f"^{_REPO_SEGMENT_RE}/{_REPO_SEGMENT_RE}$")
 
 
 class HfModelSync:

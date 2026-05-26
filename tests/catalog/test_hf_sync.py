@@ -630,6 +630,13 @@ class TestRepoIdValidation:
         "bad_repo_id",
         [
             "../../admin",  # traversal
+            "../admin",  # single dot-dot segment
+            ".",  # bare dot
+            "..",  # bare dot-dot
+            "./foo",  # leading dot segment
+            "foo/.",  # trailing dot segment
+            "foo/..",  # trailing dot-dot segment
+            ".../legit",  # all-dot segment
             "meta-llama/Llama/../../attacker/poisoned",  # cache-poisoning path
             "meta-llama",  # missing /
             "meta-llama/Llama-3.3-70B-Instruct?token=x",  # query injection
