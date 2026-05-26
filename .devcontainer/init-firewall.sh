@@ -63,6 +63,7 @@ ALLOWED_DOMAINS=(
   "objects.githubusercontent.com"
   "raw.githubusercontent.com"
   "codeload.github.com"
+  "www.githubstatus.com"  # diagnose Actions/webhook incidents from inside the sandbox
 
   # Debian / apt
   "deb.debian.org"
@@ -74,9 +75,6 @@ ALLOWED_DOMAINS=(
   "computeprices.com"
   "www.computeprices.com"  # actual host serving /api/v1/* — `api.computeprices.com` returns 404 and the apex routes elsewhere
   "api.computeprices.com"
-
-  # GitHub service status (used to diagnose Actions/webhook incidents from inside the sandbox)
-  "www.githubstatus.com"
   "artificialanalysis.ai"
   "huggingface.co"
   # Additional GPU/inference price sources referenced in specs
