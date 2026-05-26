@@ -54,7 +54,7 @@ class HfModelSync:
 
 Both files share the same row schema (`slug`, `hf_repo_id`, optional `kv_cache_strategy_override`, optional `display_name`). The user file goes under XDG `~/.config/<app>/` rather than the cache dir so it survives a cache wipe (it's user data, not derived state).
 
-Conflict policy: when a slug appears in both files, the project seed wins. This is asymmetric on purpose — a user can't accidentally redirect a tracked model's HF repo, but they CAN extend the set with new slugs CP knows about but our seeds don't yet (Case 2 / Case 3 of [M09's unknown-model dispatch](../spec/M09-mcp-server.md#unknown-model-handling)).
+Conflict policy: when a slug appears in both files, the project seed wins. This is asymmetric on purpose — a user can't accidentally redirect a tracked model's HF repo, but they CAN extend the set with new slugs CP knows about but our seeds don't yet (Case 2 / Case 3 of [M09's unknown-model dispatch](M09-mcp-server.md#unknown-model-handling)).
 
 ### Pydantic projection (ADR-015 — `raw_config` preserves everything)
 
