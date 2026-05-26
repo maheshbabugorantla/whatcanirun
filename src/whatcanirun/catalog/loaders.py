@@ -71,5 +71,24 @@ def load_quantizations(path: Path) -> list[Quantization]:
 
 def load_tracked_models(path: Path) -> list[TrackedModelRow]:
     """Load `seeds/tracked_models.yaml` (or a user_models.yaml extension
-    file) into validated `TrackedModelRow` rows."""
-    return _load_rows(path, TrackedModelRow)
+    file) into validated `TrackedModelRow` rows.
+
+    Slugs must be unique within a single file. Two rows sharing the
+    same `slug` is almost always a typo / merge-conflict footgun —
+    without detection, both rows would load, both syncs would run,
+    and the second would silently overwrite the first in the cache.
+    Cross-file slug conflicts (seed vs user) are a different concern
+    handled by `HfModelSync._load_merged_tracked_rows` with a
+    seed-wins policy.
+    """
+    rows = _load_rows(path, TrackedModelRow)
+    seen: dict[str, int] = {}
+    for idx, row in enumerate(rows, start=1):
+        if row.slug in seen:
+            raise SeedLoadError(
+                f"{path}: duplicate slug {row.slug!r} appears at rows "
+                f"#{seen[row.slug]} and #{idx}; each slug must appear at most "
+                f"once per file"
+            )
+        seen[row.slug] = idx
+    return rows

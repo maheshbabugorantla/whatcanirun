@@ -87,6 +87,50 @@ class TestLoadGpuSupplements:
         assert "list" in str(exc_info.value).lower()
 
 
+class TestLoadTrackedModels:
+    def test_loads_single_row(self, tmp_path: Path) -> None:
+        from whatcanirun.catalog.loaders import load_tracked_models
+
+        yaml = """\
+- slug: llama-3-3-70b
+  hf_repo_id: meta-llama/Llama-3.3-70B-Instruct
+  display_name: Llama 3.3 70B Instruct
+  total_params_b: 70.6
+"""
+        f = tmp_path / "t.yaml"
+        f.write_text(yaml)
+        rows = load_tracked_models(f)
+        assert len(rows) == 1
+        assert rows[0].slug == "llama-3-3-70b"
+
+    def test_intra_file_duplicate_slug_rejected(self, tmp_path: Path) -> None:
+        """A YAML with two rows sharing the same `slug` is a typo /
+        merge-conflict footgun — without explicit detection, both rows
+        load, both syncs run, and the second one silently overwrites
+        the first in the cache (last-write-wins). Catch at load time
+        with a clear error naming the duplicated slug."""
+        from whatcanirun.catalog.loaders import load_tracked_models
+
+        yaml = """\
+- slug: foo
+  hf_repo_id: vendor/A1
+  display_name: A1
+  total_params_b: 7.0
+- slug: foo
+  hf_repo_id: vendor/A2
+  display_name: A2
+  total_params_b: 7.0
+- slug: bar
+  hf_repo_id: vendor/B
+  display_name: B
+  total_params_b: 7.0
+"""
+        f = tmp_path / "t.yaml"
+        f.write_text(yaml)
+        with pytest.raises(SeedLoadError, match="duplicate slug"):
+            load_tracked_models(f)
+
+
 class TestLoadQuantizations:
     def test_loads_single_row(self, tmp_path: Path) -> None:
         f = tmp_path / "q.yaml"
