@@ -93,6 +93,7 @@ class ComputePricesClient:
         retry_attempts: int = 4,
         retry_wait_min_s: float = 1.0,
         retry_wait_max_s: float = 4.0,
+        snapshot_retention: dt.timedelta = dt.timedelta(days=30),
     ) -> None:
         self.cache_dir = cache_dir
         self._api_key = api_key
@@ -104,6 +105,7 @@ class ComputePricesClient:
         self._retry_attempts = retry_attempts
         self._retry_wait_min_s = retry_wait_min_s
         self._retry_wait_max_s = retry_wait_max_s
+        self._snapshot_retention = snapshot_retention
 
     # ---------------------------------------------------------------- public API
 
@@ -219,6 +221,29 @@ class ComputePricesClient:
             json.dump(payload, f)
         return path
 
+    def prune_snapshots(self, older_than: dt.timedelta) -> int:
+        """Delete snapshot files older than `older_than` from every
+        endpoint's snapshot directory. Returns the count of deleted
+        files. Safe to call when `cache_dir` doesn't exist yet.
+
+        Only files under `<cache_dir>/*.snapshots/` are eligible —
+        stray .json.gz files elsewhere in the cache dir are
+        untouched (a stray file there is more likely user data than
+        leftover snapshot debris).
+        """
+        if not self.cache_dir.exists():
+            return 0
+        cutoff = (_now() - older_than).timestamp()
+        deleted = 0
+        for snapshots_dir in self.cache_dir.glob("*.snapshots"):
+            if not snapshots_dir.is_dir():
+                continue
+            for path in snapshots_dir.iterdir():
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    deleted += 1
+        return deleted
+
     async def _fetch_and_project[Row: _CpRow](
         self, endpoint: str, row_model: type[Row]
     ) -> list[Row]:
@@ -245,4 +270,8 @@ class ComputePricesClient:
             else:
                 self._write_cache(endpoint, payload)
                 self._write_snapshot(endpoint, payload)
+                # Opportunistic prune: bounded I/O cost per live fetch
+                # keeps the cache dir from growing without bound on
+                # long-running deployments.
+                self.prune_snapshots(older_than=self._snapshot_retention)
         return [row_model.project(item) for item in payload["data"]]
