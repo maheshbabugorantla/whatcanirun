@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.tox/
+
+# uv / venv
+.venv/
+venv/
+uv.lock.tmp
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Project caches (per ADR-013)
+.cache/
+~/.cache/whatcanirun/
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# Output directories
+output/
+tmp/
+*.log
+
+# Docker volumes for Claude sandbox
+.claude-volumes/
+
+# Local tool binaries (gh, etc. installed into the workspace mount)
+.bin/
+
+# Generated data (regenerated from upstream)
+seeds/benchmark_cells.parquet.tmp

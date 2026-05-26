@@ -1,0 +1,27 @@
+# GPU supplement — fields not in ComputePrices /api/v1/gpus.
+# Spec: spec/M01-catalog-supplements.md
+# Sources: NVIDIA/AMD datasheets, Inference Engineering book §5.1.1
+#
+# Schema:
+#   slug                          (str)        Joins ComputePrices /api/v1/gpus.slug
+#   fp8_tflops_dense              (float|null) Dense FP8 tensor TFLOPS
+#   fp4_tflops_dense              (float|null) Dense FP4 tensor TFLOPS (null pre-Blackwell)
+#   form_factor                   (enum)       SXM | PCIe | NVL | OAM
+#   supports_fp8                  (bool)
+#   supports_fp4                  (bool)
+#   attention_kernels_supported   (list[str])  flash_attention_2, paged_attention, etc.
+#   notes                         (str)
+#   datasheet_url                 (str)        Public manufacturer URL
+#
+# Target: 12 rows. M01 fills these in from datasheets.
+
+# Example row (M01 expands to 12):
+# - slug: h100
+#   fp8_tflops_dense: 1979
+#   fp4_tflops_dense: null
+#   form_factor: SXM
+#   supports_fp8: true
+#   supports_fp4: false
+#   attention_kernels_supported: [flash_attention_2, paged_attention]
+#   notes: "Hopper architecture, HBM3, 80GB. Released March 2022."
+#   datasheet_url: "https://www.nvidia.com/en-us/data-center/h100/"

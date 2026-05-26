@@ -1,0 +1,58 @@
+schemaVersion: "1"
+kind: mixin
+name: whatcanirun
+displayName: whatcanirun — LLM Inference Pricing MCP Server
+description: Network policy and tooling for the whatcanirun project
+
+network:
+  allowedDomains:
+    # Anthropic / Claude Code
+    - api.anthropic.com
+    - statsig.anthropic.com
+    - claude.ai
+    # Python tooling
+    - pypi.org
+    - files.pythonhosted.org
+    - astral.sh
+    # Git
+    - github.com
+    - api.github.com
+    - objects.githubusercontent.com
+    - raw.githubusercontent.com
+    # Project data sources
+    - computeprices.com
+    - api.computeprices.com
+    - artificialanalysis.ai
+    - huggingface.co
+    - glama.ai
+    - www.pulsemcp.com
+    - www.spheron.network
+    - www.nvidia.com
+
+credentials:
+  sources:
+    computeprices:
+      env: [COMPUTEPRICES_API_KEY]
+    artificial-analysis:
+      env: [AA_API_KEY]
+    huggingface:
+      env: [HF_TOKEN]
+
+environment:
+  variables:
+    UV_PROJECT_ENVIRONMENT: /workspace/.venv-linux
+
+commands:
+  install:
+    - command: "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh"
+      user: "0"
+      description: Install uv
+    - command: "uv python install 3.12"
+      user: "1000"
+      description: Install Python 3.12
+
+memory: |
+  This is the whatcanirun project — a stdio MCP server that converts
+  (budget_usd, model) queries into ranked, source-backed inference plans.
+  Read spec/SHARED.md before doing anything substantive.
+  Always follow the TDD discipline in CLAUDE.md.

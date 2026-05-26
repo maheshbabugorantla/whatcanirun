@@ -1,0 +1,70 @@
+# compose.claude.yml
+#
+# Run Claude Code in a sandboxed container for whatcanirun.
+#
+# Usage:
+#   # First time: build the image
+#   docker compose -f compose.claude.yml build
+#
+#   # Start the container in background
+#   docker compose -f compose.claude.yml up -d
+#
+#   # Attach an interactive shell (e.g. inside a tmux session)
+#   docker exec -it whatcanirun-claude zsh
+#
+#   # Inside the container:
+#   claude --dangerously-skip-permissions
+
+services:
+  claude:
+    build:
+      context: ./.devcontainer
+      dockerfile: Dockerfile
+    image: whatcanirun/claude-sandbox:latest
+    container_name: whatcanirun-claude
+    hostname: claude
+    init: true
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+    volumes:
+      - .:/workspace:cached
+      - /var/run/docker.sock:/var/run/docker.sock
+      - claude-config:/home/node/.claude
+      - claude-cache:/home/node/.cache
+      - claude-history:/commandhistory
+
+    environment:
+      - TZ=${TZ:-America/Chicago}
+      - CLAUDE_CONFIG_DIR=/home/node/.claude
+      - SHELL=/bin/zsh
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - COMPUTEPRICES_API_KEY=${COMPUTEPRICES_API_KEY:-}
+      - AA_API_KEY=${AA_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - UV_PROJECT_ENVIRONMENT=/workspace/.venv-linux
+
+    # Run firewall on entry, then drop to a zsh shell where you run claude manually.
+    entrypoint: ["/bin/zsh", "-c"]
+    command:
+      - |
+        sudo /usr/local/bin/init-firewall.sh && exec zsh
+
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+
+volumes:
+  claude-config:
+    name: whatcanirun-claude-config
+  claude-cache:
+    name: whatcanirun-claude-cache
+  claude-history:
+    name: whatcanirun-claude-history

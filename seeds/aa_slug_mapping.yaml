@@ -1,0 +1,36 @@
+# Artificial Analysis slug mapping — curated, NEVER fuzzy.
+# Spec: spec/M04-aa-optional-client.md
+#
+# WHY curated: live verification shows substring matching maps
+# `llama-3-1-405b` to `hermes-4-llama-3-1-405b` (a Nous fine-tune, NOT vanilla Llama).
+# Every mapping must be explicit.
+#
+# Schema:
+#   cp_slug              (str)            ComputePrices slug (our canonical)
+#   aa_slugs             (list)           Zero or more AA slug variants
+#     - aa_slug          (str)            The AA slug as it appears in the response
+#       reasoning_effort (enum|null)      low | medium | high | null (non-reasoning model)
+#   investigation_note   (str, optional)  For documented mysteries (e.g. Llama-3.3-70B absence)
+#
+# Target: ~30 rows. M04 fills these in by grepping a live AA response.
+
+# Example reasoning model with three effort levels:
+# - cp_slug: gpt-oss-120b
+#   aa_slugs:
+#     - aa_slug: gpt-oss-120b-low
+#       reasoning_effort: low
+#     - aa_slug: gpt-oss-120b-medium
+#       reasoning_effort: medium
+#     - aa_slug: gpt-oss-120b-high
+#       reasoning_effort: high
+#
+# Example non-reasoning model:
+# - cp_slug: deepseek-v3
+#   aa_slugs:
+#     - aa_slug: deepseek-v3
+#       reasoning_effort: null
+#
+# Example explicit miss with investigation note:
+# - cp_slug: llama-3-3-70b
+#   aa_slugs: []
+#   investigation_note: "Live verification (25 May 2026): no match across 524 rows. Investigate during M04."

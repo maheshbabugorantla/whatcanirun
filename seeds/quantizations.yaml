@@ -1,0 +1,18 @@
+# Quantization schemes — fields from Inference Engineering book §5.1.1
+# Spec: spec/M01-catalog-supplements.md
+#
+# Schema:
+#   slug                       (str)
+#   bits_per_weight            (int)
+#   kv_cache_bits_default      (int)
+#   introduced_architecture    (str)  e.g. "Hopper", "Blackwell"
+#   notes                      (str)
+#
+# Target: 10 rows. M01 fills these in from book §5.1.1 Table 5-1.
+
+# Example row:
+# - slug: fp16
+#   bits_per_weight: 16
+#   kv_cache_bits_default: 16
+#   introduced_architecture: Pascal
+#   notes: "IEEE 754 half-precision; native on all data-center GPUs"

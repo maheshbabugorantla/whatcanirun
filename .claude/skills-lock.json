@@ -1,0 +1,77 @@
+{
+  "$schema": "https://github.com/mattpocock/skills/raw/main/skills-lock-schema.json",
+  "version": "1.0",
+  "description": "Skill set for the whatcanirun project — preserved from llm-inference-pricing v1 workflow",
+  "skills": [
+    {
+      "name": "setup-matt-pocock-skills",
+      "source": "github:mattpocock/skills/setup-matt-pocock-skills",
+      "purpose": "Bootstrap the skill workflow and issue tracker vocabulary"
+    },
+    {
+      "name": "to-prd",
+      "source": "github:mattpocock/skills/to-prd",
+      "purpose": "Convert a milestone spec into a ready-for-agent issue body"
+    },
+    {
+      "name": "to-issues",
+      "source": "github:mattpocock/skills/to-issues",
+      "purpose": "Break a milestone into vertical-slice sub-issues"
+    },
+    {
+      "name": "tdd",
+      "source": "github:mattpocock/skills/tdd",
+      "purpose": "Enforce red-green-refactor discipline; one behavior at a time"
+    },
+    {
+      "name": "triage",
+      "source": "github:mattpocock/skills/triage",
+      "purpose": "Categorize problems before reaching for solutions"
+    },
+    {
+      "name": "diagnose",
+      "source": "github:mattpocock/skills/diagnose",
+      "purpose": "Root-cause analysis for failing tests or unexpected behavior"
+    },
+    {
+      "name": "grill-with-docs",
+      "source": "github:mattpocock/skills/grill-with-docs",
+      "purpose": "Pushback discipline — challenge assumptions before acting"
+    },
+    {
+      "name": "prototype",
+      "source": "github:mattpocock/skills/prototype",
+      "purpose": "Quick proof-of-concept before committing to full implementation"
+    },
+    {
+      "name": "zoom-out",
+      "source": "github:mattpocock/skills/zoom-out",
+      "purpose": "Strategic checkpoint when stuck or drifting"
+    },
+    {
+      "name": "handoff",
+      "source": "github:mattpocock/skills/handoff",
+      "purpose": "Clean transition between sessions or contributors"
+    },
+    {
+      "name": "caveman",
+      "source": "github:mattpocock/skills/caveman",
+      "purpose": "Strip complexity back to first principles when something feels wrong"
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "source": "github:mattpocock/skills/improve-codebase-architecture",
+      "purpose": "Structural refactor — only when patterns have clearly emerged"
+    },
+    {
+      "name": "grill-me",
+      "source": "github:mattpocock/skills/grill-me",
+      "purpose": "Self-critique loop before submitting work"
+    },
+    {
+      "name": "write-a-skill",
+      "source": "github:mattpocock/skills/write-a-skill",
+      "purpose": "Document new patterns that emerge during development"
+    }
+  ]
+}

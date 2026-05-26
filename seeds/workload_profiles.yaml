@@ -1,0 +1,33 @@
+# Workload profiles — used by budget_to_plan to convert $ into prompt counts.
+# Spec: spec/M05-workload-profiles.md
+#
+# Schema:
+#   slug                  (str)
+#   display_name          (str)
+#   avg_input_tokens      (int, >0)
+#   avg_output_tokens     (int, >0)
+#   is_default            (bool)  Exactly one row must be true
+#   description           (str)
+#
+# Target: 3 rows. M05 fills these in.
+
+# - slug: code_completion
+#   display_name: "Code completion (Copilot-style)"
+#   avg_input_tokens: 800
+#   avg_output_tokens: 120
+#   is_default: false
+#   description: "Editor-integrated completion. Heavy on context, light on output."
+#
+# - slug: chat_assistant
+#   display_name: "Chat assistant (general Q&A)"
+#   avg_input_tokens: 400
+#   avg_output_tokens: 250
+#   is_default: true
+#   description: "Conversational use. Balanced input/output. Used when caller does not specify."
+#
+# - slug: batch_eval
+#   display_name: "Batch evaluation"
+#   avg_input_tokens: 1200
+#   avg_output_tokens: 200
+#   is_default: false
+#   description: "Eval suites, classification pipelines, retrieval grading."

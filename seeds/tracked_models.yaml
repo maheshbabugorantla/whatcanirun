@@ -1,0 +1,18 @@
+# Models tracked by M03 (HF sync).
+# Spec: spec/M03-hf-model-sync.md
+#
+# Schema:
+#   slug                              (str)   Joins ComputePrices /api/v1/llm-models
+#   hf_repo_id                        (str)   Hugging Face repo identifier
+#   kv_cache_strategy_override        (enum, optional)  standard_gqa | mla | sliding_window
+#                                              Overrides config.json auto-detection
+#
+# Target: ~30 rows. M03 fills these in. Examples:
+#
+# - slug: llama-3-3-70b
+#   hf_repo_id: "meta-llama/Llama-3.3-70B-Instruct"
+# - slug: deepseek-v3
+#   hf_repo_id: "deepseek-ai/DeepSeek-V3"
+#   kv_cache_strategy_override: mla
+# - slug: gpt-oss-120b
+#   hf_repo_id: "openai/gpt-oss-120b"

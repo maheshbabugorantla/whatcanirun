@@ -1,0 +1,41 @@
+# Sandbox image for Claude Code on whatcanirun.
+# Mirrors the v1 llm-inference-pricing sandbox pattern.
+
+FROM python:3.12-slim
+
+# System deps required for: git operations, uv, ssh (for HF auth if needed),
+# and the few native libs DuckDB / pyarrow need.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    ca-certificates \
+    gnupg \
+    openssh-client \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv — fast Python package manager, replaces poetry/pip
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Node.js (LTS) — required by Claude Code CLI
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# Non-root user — Claude Code runs as 'agent', not root.
+# Files in /workspace owned by host user via volume mount + UID/GID passthrough.
+RUN useradd -m -u 1000 -s /bin/bash agent
+USER agent
+WORKDIR /workspace
+
+# Persist Claude Code state (login, conversation history) across container restarts
+# via a named volume defined in compose.claude.yml.
+ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
+
+# Default command: drop into an interactive Claude Code session.
+# Override with `docker compose run claude-code bash` if you need a plain shell.
+CMD ["claude"]
