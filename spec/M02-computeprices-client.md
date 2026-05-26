@@ -154,7 +154,7 @@ Always confirm pricing on the provider's official page before purchasing.
 4. **Slice D: Snapshot persistence** — failing test: after one successful fetch, a timestamped `.json.gz` exists. Implement. Green.
 5. **Slice E: Fallback on upstream failure** — failing test: with respx returning 500, client returns latest snapshot. Implement. Green.
 6. **Slice F: Pruning** — failing test: snapshots older than 30 days are removed. Implement. Green.
-7. **Slice G: Schema-evolution test (ADR-015)** — failing test: payload with an unknown extra field on `specs` succeeds, field preserved in `raw` and queryable. Already covered by Pydantic config but verify end-to-end. Marker: `@pytest.mark.schema_evolution`.
+7. **Slice G: Schema-evolution test (ADR-015) + CI gate re-enable** — failing test: payload with an unknown extra field on `specs` succeeds, field preserved in `raw` and queryable. Already covered by Pydantic config but verify end-to-end. Marker: `@pytest.mark.schema_evolution`. **Once this test is green, remove the M00 tolerance shim from `.github/workflows/ci.yml`'s `schema-evolution` job** (introduced in commit `8ddcf90` to let CI pass when zero tests carried the marker). The job step should revert to a plain `uv run pytest -m schema_evolution -ra` so that an empty collection (exit 5) once again fails the build — that's the whole point of the dedicated gate per ADR-015.
 
 ---
 
@@ -167,6 +167,7 @@ Always confirm pricing on the provider's official page before purchasing.
 - [ ] `respx` fixture suite covers: happy path, 429 retry-then-success, 500-then-fallback, malformed JSON.
 - [ ] No live HTTP in CI (`COMPUTEPRICES_API_KEY=""` in CI env).
 - [ ] Schema-evolution test (`@pytest.mark.schema_evolution`) passes — unknown field on `specs` preserved.
+- [ ] `.github/workflows/ci.yml` `schema-evolution` job step is reverted to plain `uv run pytest -m schema_evolution -ra` (M00 exit-5 tolerance shim removed); CI fails if marker collection is empty.
 - [ ] Caveat list propagated: ComputePrices' disclaimer included verbatim in trust envelope caveats.
 - [ ] `prune_snapshots(older_than=timedelta(days=30))` works and is tested.
 
