@@ -18,7 +18,7 @@ from whatcanirun.catalog.seed_schemas import (
     Quantization,
     TrackedModelRow,
 )
-from whatcanirun.pricing.aa_slug_mapping import AaSlugMappingRow
+from whatcanirun.pricing.artificial_analysis import AaSlugMappingRow
 
 
 class SeedLoadError(Exception):

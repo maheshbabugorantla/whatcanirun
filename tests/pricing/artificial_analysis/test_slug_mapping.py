@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 from whatcanirun.catalog.loaders import SeedLoadError, load_aa_slug_mapping
-from whatcanirun.pricing.aa_slug_mapping import (
+from whatcanirun.pricing.artificial_analysis import (
     AaSlugMappingRow,
     AaSlugVariant,
     resolve_aa_slug,

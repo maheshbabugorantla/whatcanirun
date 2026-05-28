@@ -23,7 +23,7 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from whatcanirun.pricing.aa_projections import ReasoningEffort
+from whatcanirun.pricing.artificial_analysis.projections import ReasoningEffort
 
 
 class AaSlugVariant(BaseModel):

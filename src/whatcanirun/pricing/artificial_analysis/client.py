@@ -54,7 +54,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from whatcanirun.pricing.aa_projections import AaModelRow
+from whatcanirun.pricing.artificial_analysis.projections import AaModelRow
 
 _log = logging.getLogger(__name__)
 

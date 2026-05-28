@@ -101,7 +101,7 @@ def test_known_cp_slugs_resolve_to_their_documented_aa_slugs(
     """Lock the (cp, aa) resolutions discovered during Slice F so a
     drive-by edit to the YAML can't quietly re-introduce the
     Llama-3.3-70B-style mystery."""
-    from whatcanirun.pricing.aa_slug_mapping import resolve_aa_slug
+    from whatcanirun.pricing.artificial_analysis import resolve_aa_slug
 
     mapping = load_aa_slug_mapping(_SEEDS / "aa_slug_mapping.yaml")
     assert resolve_aa_slug(mapping, cp_slug, None) == expected_aa_slug

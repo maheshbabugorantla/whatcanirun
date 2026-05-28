@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from whatcanirun.pricing.aa_projections import AaModelRow
+from whatcanirun.pricing.artificial_analysis import AaModelRow
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _FIXTURES = _REPO_ROOT / "tests" / "fixtures"

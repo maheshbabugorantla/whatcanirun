@@ -86,7 +86,9 @@ async def test_5xx_with_recent_cache_serves_cache_silently(
 @pytest.mark.asyncio
 @respx.mock
 async def test_schema_breaking_response_falls_back_to_cache_not_raises(
-    fast_client: ArtificialAnalysisClient, cache_dir: Path
+    fast_client: ArtificialAnalysisClient,
+    cache_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If AA ships a payload restructuring (e.g. renames `data` to
     `models`), the shape-validation `ValueError` MUST NOT propagate
@@ -97,8 +99,15 @@ async def test_schema_breaking_response_falls_back_to_cache_not_raises(
 
     Pre-warm a valid cache, walk time past TTL so a refresh fires,
     then serve a 200 with a missing-`data` payload. Caller sees the
-    cached rows, not a crash."""
-    from whatcanirun.pricing import artificial_analysis as aa_mod
+    cached rows, not a crash.
+
+    Uses `monkeypatch.setattr` (not bare `aa_mod._now = ...`) so the
+    patched lambdas get restored on teardown — without that, a
+    follow-up test in the same session would inherit a frozen
+    12h-in-the-future clock and see spurious cache-miss/hit failures
+    depending on test order.
+    """
+    from whatcanirun.pricing.artificial_analysis import client as aa_mod
 
     aa_dir = cache_dir / "artificial_analysis"
     aa_dir.mkdir(parents=True)
@@ -115,8 +124,8 @@ async def test_schema_breaking_response_falls_back_to_cache_not_raises(
     import datetime as dt_mod
 
     real_mtime = dt_mod.datetime.fromtimestamp(cache_file.stat().st_mtime, tz=dt_mod.UTC)
-    aa_mod._jitter_seconds = lambda: 0.0  # type: ignore[assignment]
-    aa_mod._now = lambda: real_mtime + dt_mod.timedelta(hours=12)  # type: ignore[assignment]
+    monkeypatch.setattr(aa_mod, "_jitter_seconds", lambda: 0.0)
+    monkeypatch.setattr(aa_mod, "_now", lambda: real_mtime + dt_mod.timedelta(hours=12))
 
     # AA returns 200 but with the `data` array renamed to `models`
     # — a breaking schema change. Without the ValueError-as-
@@ -142,7 +151,7 @@ async def test_5xx_with_stale_cache_serves_stale_silently(
     M09's trust envelope will mark `freshness["artificial_analysis"]`
     accordingly — staleness is the user's signal, not silent
     degradation."""
-    from whatcanirun.pricing import artificial_analysis as aa_mod
+    from whatcanirun.pricing.artificial_analysis import client as aa_mod
 
     monkeypatch.setattr(aa_mod, "_jitter_seconds", lambda: 0.0)
     aa_dir = cache_dir / "artificial_analysis"

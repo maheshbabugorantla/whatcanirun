@@ -27,10 +27,10 @@ import httpx
 import pytest
 import respx
 
-from whatcanirun.pricing import artificial_analysis as aa_mod
 from whatcanirun.pricing.artificial_analysis import (
     ArtificialAnalysisClient,
 )
+from whatcanirun.pricing.artificial_analysis import client as aa_mod
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _FIXTURES = _REPO_ROOT / "tests" / "fixtures"
