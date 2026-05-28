@@ -172,12 +172,12 @@ Maps ComputePrices slug → HF repo_id:
 
 ### Family-specific extraction
 
-Each family has its own quirk. Extraction logic in `src/whatcanirun/catalog/families/`:
+The single `Model.from_hf_config` factory in `src/whatcanirun/catalog/hf_model.py` handles every family via auto-detection — no per-family submodule. `detect_architecture_family(raw_config)` reads `architectures[0]`; `detect_kv_cache_strategy(family)` then routes DeepSeek-V3 to `mla` and everything else to `standard_gqa`. Family-specific keys ride through in `raw_config` for M07 to read when its MLA / MoE branches need them:
 
-| Family | Quirk | Implementation |
+| Family | Quirk | Where the M07 branch reads from |
 |---|---|---|
-| **llama, qwen, qwen3, mistral, phi, gemma** | Standard GQA | `num_key_value_heads` direct from config |
-| **deepseek_v3** | MLA — `kv_lora_rank` + `qk_rope_head_dim` instead of standard KV heads | Read both fields from raw_config; n_kv_heads is informational |
+| **llama, qwen, qwen3, mistral, phi, gemma** | Standard GQA | `num_key_value_heads` direct from `raw_config` |
+| **deepseek_v3** | MLA — `kv_lora_rank` + `qk_rope_head_dim` instead of standard KV heads | Both fields preserved in `raw_config`; `n_kv_heads` is informational |
 | **mixtral** | MoE — sparse experts | `total_params_b` from safetensors total; `active_params_b = num_experts_per_tok × per_expert_params_b` |
 | **gpt_oss** | MoE — similar to Mixtral | Same approach; verify against HF model card |
 | **unknown** | Raise `UnsupportedArchitectureFamily` | Log warning; M03 skips this model with `raw_config` still preserved |

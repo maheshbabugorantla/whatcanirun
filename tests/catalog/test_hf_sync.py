@@ -195,6 +195,78 @@ async def test_raw_config_bytes_are_byte_identical_not_reserialized(
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_raw_config_bytes_verbatim_for_non_ascii_and_bom(
+    cache_dir: Path,
+) -> None:
+    """ADR-015 invariant #2 demands BYTE-identical persistence — not
+    text-identical. HF responses can contain non-ASCII (Chinese
+    model descriptions, accented author names in nested fields).
+
+    The previous `response.text → write_text → read_text` round-trip
+    decodes via httpx's charset detection (which can normalize) and
+    writes via the locale's default codec — transforming bytes for
+    any payload that isn't pure ASCII. That silently defeats the
+    schema-evolution audit use case the ADR exists for.
+
+    This test serves a valid-JSON payload with multi-byte UTF-8
+    characters in a string value (Chinese characters for "deep
+    learning"), captures the source bytes, and asserts the on-disk
+    file matches via `read_bytes()` — not `read_text()`. Equality
+    at the bytes level rules out re-encoding regressions."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc123"
+
+    # Multi-byte UTF-8 ("深度学习" = "deep learning") embedded in a
+    # field value. Required keys included so json.loads + shape
+    # validation pass. The leading whitespace, key ordering, and
+    # spacing are non-canonical and must survive the round-trip
+    # too — `response.text + write_text` would also lose those
+    # under certain locale conditions.
+    multibyte_raw = (
+        b'  {"architectures": ["LlamaForCausalLM"], '
+        b'"num_hidden_layers": 80, "num_attention_heads": 64, '
+        b'"num_key_value_heads": 8, "hidden_size": 8192, '
+        b'"max_position_embeddings": 131072, "torch_dtype": "bfloat16", '
+        b'"_model_card_note": "\xe6\xb7\xb1\xe5\xba\xa6\xe5\xad\xa6\xe4\xb9\xa0"}'
+    )
+
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+    )
+    # The `charset=latin-1` label causes httpx to decode the UTF-8
+    # bytes as Latin-1 — producing mojibake in `response.text`. A
+    # `response.text + write_text` path would persist the mojibake'd
+    # form; only `response.content + write_bytes` preserves the
+    # original bytes the upstream sent. This is the load-bearing
+    # divergence: ADR-015 says "the exact bytes HF returned" and
+    # bytes-mode is the only way to honor that for charset-labeled
+    # responses, BOM payloads, or genuinely invalid UTF-8.
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(
+            200,
+            content=multibyte_raw,
+            headers={"content-type": "application/json; charset=latin-1"},
+        )
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    await sync.sync_model(
+        repo_id=repo_id,
+        slug="llama-3-3-70b",
+        display_name="Llama",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    raw_cache_file = cache_dir / "huggingface" / "llama-3-3-70b.config.json"
+    # Byte-for-byte equality — the load-bearing assertion. The
+    # previous `read_text()` comparison would mask re-encoding
+    # regressions for any non-ASCII payload.
+    assert raw_cache_file.read_bytes() == multibyte_raw
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_raw_config_persists_even_when_shape_validation_fails(
     cache_dir: Path,
 ) -> None:
@@ -670,9 +742,13 @@ class TestCacheShapeResilience:
 
     @pytest.fixture
     def seed_corrupt_cache(self, cache_dir: Path):
-        def _seed(slug: str, contents: str) -> None:
+        def _seed(slug: str, contents: str | bytes) -> None:
             (cache_dir / "huggingface").mkdir(parents=True, exist_ok=True)
-            (cache_dir / "huggingface" / f"{slug}.model.json").write_text(contents)
+            cache_path = cache_dir / "huggingface" / f"{slug}.model.json"
+            if isinstance(contents, bytes):
+                cache_path.write_bytes(contents)
+            else:
+                cache_path.write_text(contents)
 
         return _seed
 
@@ -739,6 +815,65 @@ class TestCacheShapeResilience:
         )
         assert model.slug == "llama-3-3-70b"
         assert config_route.called
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_invalid_utf8_cached_payload_triggers_refetch(
+        self, cache_dir: Path, llama_config: dict[str, Any], seed_corrupt_cache
+    ) -> None:
+        """`read_text()` raises `UnicodeDecodeError` on invalid UTF-8.
+        A cache file corrupted by disk damage, partial write of a
+        binary payload, or manual tampering with non-UTF-8 bytes
+        must NOT crash the cache-hit path — the file gets treated as
+        a miss and the sync refetches cleanly. Without the
+        UnicodeDecodeError catch, the entire sync_model call would
+        propagate the decode error to the M09 dispatcher and
+        upstream-down recovery would never run."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        sha = "abc"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
+        )
+        config_route = respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        # 0xff 0xfe is invalid UTF-8 (continuation byte + invalid start).
+        seed_corrupt_cache("llama-3-3-70b", b"\xff\xfe garbage \xc3\x28")
+
+        sync = HfModelSync(cache_dir=cache_dir)
+        model = await sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+        assert model.slug == "llama-3-3-70b"
+        assert config_route.called
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_invalid_utf8_cached_payload_does_not_crash_stale_fallback(
+        self, fast_sync: HfModelSync, seed_corrupt_cache
+    ) -> None:
+        """Same UnicodeDecodeError must not crash the upstream-down
+        ADR-013 stale-fallback path either. With HF down and a
+        corrupt-bytes cache, the only honest outcome is
+        `HfModelSyncUnavailable` (not a decode-error traceback)."""
+        repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+        respx.get(f"{_HF_API_BASE}/{repo_id}").mock(return_value=httpx.Response(503, text="boom"))
+
+        seed_corrupt_cache("llama-3-3-70b", b"\xff\xfe garbage \xc3\x28")
+
+        with pytest.raises(HfModelSyncUnavailable):
+            await fast_sync.sync_model(
+                repo_id=repo_id,
+                slug="llama-3-3-70b",
+                display_name="Llama",
+                total_params_b=70.6,
+                active_params_b=None,
+            )
 
     @pytest.mark.asyncio
     @respx.mock
@@ -937,6 +1072,7 @@ class TestRepoIdValidation:
             )
 
     @pytest.mark.asyncio
+    @respx.mock
     @pytest.mark.parametrize(
         "ok_repo_id",
         [
@@ -953,32 +1089,34 @@ class TestRepoIdValidation:
         ],
     )
     async def test_accepts_dot_prefixed_segment_with_alphanumerics(
-        self, sync: HfModelSync, ok_repo_id: str
+        self, sync: HfModelSync, ok_repo_id: str, llama_config: dict[str, Any]
     ) -> None:
-        # Mock so we can probe the validator without a real HF call.
-        # We expect EITHER a successful network call (intercepted by
-        # respx) OR a downstream non-ValueError-about-repo_id (e.g.
-        # connection refused if no respx mock matched). What we
-        # must NOT see is `ValueError(... repo_id ...)` from the
-        # boundary validator.
-        try:
-            await sync.sync_model(
-                repo_id=ok_repo_id,
-                slug="some-slug",
-                display_name="ignored",
-                total_params_b=70.6,
-                active_params_b=None,
-            )
-        except ValueError as exc:
-            if "repo_id" in str(exc):
-                raise AssertionError(
-                    f"validator over-rejected legitimate repo_id {ok_repo_id!r}: {exc}"
-                ) from exc
-        except Exception:
-            # Any other failure (httpx connection error etc.) means
-            # the validator let it through and the request reached
-            # the network layer — that's the behavior we want to pin.
-            pass
+        """Pin the validator-pass behavior with a hermetic stub —
+        respx intercepts both HF endpoints so the test is offline-safe
+        and the absence of `@respx.mock` (the previous bug) can't make
+        the suite hit the real Hugging Face Hub. Assert the info route
+        was called, which is only reachable if the boundary validator
+        accepted the repo_id."""
+        sha = "abc"
+        info_route = respx.get(f"{_HF_API_BASE}/{ok_repo_id}").mock(
+            return_value=httpx.Response(200, json={"sha": sha, "modelId": ok_repo_id})
+        )
+        respx.get(f"{_HF_RAW_BASE}/{ok_repo_id}/raw/{sha}/config.json").mock(
+            return_value=httpx.Response(200, json=llama_config)
+        )
+
+        await sync.sync_model(
+            repo_id=ok_repo_id,
+            slug="some-slug",
+            display_name="ignored",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+
+        # The validator must have let the request through to the
+        # network — if it raised ValueError on the repo_id, this
+        # route would not have been called.
+        assert info_route.called, f"validator over-rejected legitimate repo_id {ok_repo_id!r}"
 
 
 # ---------------------------- end-to-end family auto-detection via HfModelSync

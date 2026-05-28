@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -204,7 +205,7 @@ class HfModelSync:
             return cached_model
 
         try:
-            raw_config_text = await self._fetch_config_with_retry(repo_id, sha)
+            raw_config_bytes = await self._fetch_config_with_retry(repo_id, sha)
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             if not _is_retryable_http_error(exc):
                 raise
@@ -223,22 +224,26 @@ class HfModelSync:
                 f"exists at {cache_path}"
             ) from exc
         # ADR-015 invariant #2: persist the raw upstream response
-        # **verbatim** BEFORE parsing — the exact bytes HF returned,
-        # not a json.dumps reserialization of them. A future schema-
-        # evolution audit needs to compare HF's bytes against the
-        # documented schema, not against our normalized rewrite. Raw
-        # is persisted BEFORE both the json.loads parse AND the
-        # shape-validation / family-detection checks below, so even
-        # on the parse-error / shape-error / unsupported-family skip
-        # paths the investigator can read what HF actually returned.
+        # **byte-identical** BEFORE parsing — the exact bytes HF
+        # returned, not a `response.text` decoded form re-encoded by
+        # text-mode write. A future schema-evolution audit needs to
+        # compare HF's bytes against the documented schema, not
+        # against our charset-roundtripped rewrite (which would
+        # corrupt mojibake'd / BOM-prefixed / invalid-UTF-8 / charset-
+        # labeled payloads). Raw is persisted BEFORE both the
+        # json.loads parse AND the shape-validation / family-
+        # detection checks below, so even on the parse-error /
+        # shape-error / unsupported-family skip paths the
+        # investigator can read what HF actually returned.
         self._hf_dir.mkdir(parents=True, exist_ok=True)
-        self._write_atomic(self._raw_path(slug), raw_config_text)
+        self._write_atomic(self._raw_path(slug), raw_config_bytes)
 
-        # Now parse + shape-validate the on-disk bytes. Any failure
-        # here surfaces as ValueError but the raw file persists per
-        # the invariant above.
+        # Now parse + shape-validate the on-disk bytes. json.loads
+        # accepts bytes directly (it auto-detects UTF-8/16/32). Any
+        # failure surfaces as ValueError but the raw file persists
+        # per the invariant above.
         try:
-            raw_config = json.loads(raw_config_text)
+            raw_config = json.loads(raw_config_bytes)
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"HF config.json for {repo_id!r}@{sha} is not valid JSON "
@@ -295,7 +300,12 @@ class HfModelSync:
             # would silently mis-classify MLA models.
             kv_cache_strategy=kv_cache_strategy_override,
         )
-        self._write_atomic(cache_path, model.model_dump_json())
+        # Model JSON is content we generate (model_dump_json is
+        # ASCII-safe UTF-8 by Pydantic's contract), but the write
+        # path is bytes-mode for consistency with the raw config
+        # write and to avoid platform-dependent text-mode line-
+        # ending translation.
+        self._write_atomic(cache_path, model.model_dump_json().encode("utf-8"))
         return model
 
     async def sync_all_tracked(
@@ -445,7 +455,7 @@ class HfModelSync:
             return None
         try:
             decoded = json.loads(cache_path.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return None
         if not isinstance(decoded, dict):
             return None
@@ -480,7 +490,7 @@ class HfModelSync:
             return None
         try:
             decoded = json.loads(cache_path.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return None
         if not isinstance(decoded, dict):
             return None
@@ -497,60 +507,69 @@ class HfModelSync:
             return None
 
     @staticmethod
-    def _write_atomic(path: Path, contents: str) -> None:
-        """Tmp + rename so a crash mid-write can't leave a half-written
-        file that the next read would refuse to parse.
+    def _write_atomic(path: Path, contents: bytes) -> None:
+        """Tmp + rename so a crash mid-write can't leave a half-
+        written file that the next read would refuse to parse.
 
         Uses O_EXCL | O_NOFOLLOW on the tmp open: a pre-existing
-        symlink at the predictable `<path>.tmp` location causes the
-        write to fail rather than silently follow the redirect. This
-        defends against a local attacker planting a symlink at the
-        tmp path to redirect the write to arbitrary files the process
-        user can write (config files, ssh keys, etc).
+        symlink at the tmp path causes the write to fail rather than
+        silently follow the redirect. This defends against a local
+        attacker planting a symlink at the tmp path to redirect the
+        write to arbitrary files the process user can write (config
+        files, ssh keys, etc).
 
-        If the tmp path exists as a REGULAR file (not a symlink), it's
-        almost certainly a stale leftover from a prior sync that was
-        SIGKILLed between `os.open(...)` and `tmp.replace(path)`.
-        Unlink it once and retry; persistent failure (concurrent
-        process keeps recreating it) escalates. Without this recovery
-        the slug becomes unsyncable until manual cache cleanup, AND
-        in `sync_all_tracked` a single stale tmp aborts the whole
-        batch — the bare O_EXCL would be a perma-blocking foot-gun
-        under crash-prone deployments.
+        The tmp name is per-attempt unique
+        (`<path>.<pid>.<8-hex-token>.tmp`). Two consequences:
+
+          1. Concurrent syncs of the same slug each use distinct tmp
+             paths, so writer B can never unlink writer A's active
+             tmp. Whichever process wins `tmp.replace(path)` last
+             publishes the final payload; the other's tmp is
+             unlinked by the replace's atomicity (rename overwrites)
+             on Linux. Without uniqueness, a "stale-tmp recovery"
+             approach would race destructively: B sees A's tmp,
+             treats it as stale, unlinks it, and A's subsequent
+             `replace(path)` fails with ENOENT.
+
+          2. A tmp left behind by a SIGKILLed prior sync sits inert
+             on disk — bearing a name no future sync will choose —
+             so the slug stays syncable without manual cleanup. The
+             cost is occasional disk slack from orphaned tmps; for
+             this cache (KB-scale JSON files), that's a non-issue
+             relative to the concurrency + symlink-defense gains.
+
+        `contents` is bytes (not str). The raw HF config path needs
+        verbatim bytes for ADR-015; the projected Model JSON path
+        passes UTF-8-encoded model_dump_json output. Text-mode write
+        would re-encode via locale and apply platform-dependent
+        line-ending translation — both unacceptable here.
         """
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        try:
-            HfModelSync._open_excl_nofollow(tmp, contents)
-        except FileExistsError:
-            # Recover from a stale regular file only; a symlink keeps
-            # raising (the security defense) and the operator sees
-            # the loud failure.
-            if tmp.is_symlink() or not tmp.is_file():
-                raise
-            with contextlib.suppress(OSError):
-                tmp.unlink()
-            HfModelSync._open_excl_nofollow(tmp, contents)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp")
+        HfModelSync._open_excl_nofollow(tmp, contents)
         tmp.replace(path)
 
     @staticmethod
-    def _open_excl_nofollow(tmp: Path, contents: str) -> None:
+    def _open_excl_nofollow(tmp: Path, contents: bytes) -> None:
         """Atomically open `tmp` with O_EXCL|O_NOFOLLOW, write
-        `contents`, and clean up on partial-write failure. Raises
-        FileExistsError if `tmp` already exists (any kind — file,
-        symlink, directory). `_write_atomic` decides whether to
-        recover or escalate."""
+        `contents` in binary mode, and clean up on partial-write
+        failure. Raises FileExistsError if `tmp` already exists (any
+        kind — file, symlink, directory). With unique per-attempt
+        tmp names from `_write_atomic`, FileExistsError on a normal
+        cache write would indicate either a UUID collision (~zero
+        odds at 64 bits) or an attacker pre-planting the exact
+        target name — both worth escalating loudly."""
         fd = os.open(
             tmp,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
             0o600,
         )
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "wb") as f:
                 f.write(contents)
         except BaseException:
-            # If the write itself failed (disk full, EIO, etc.), clean
-            # up the empty tmp we just created so the next attempt can
-            # re-open it cleanly.
+            # If the write itself failed (disk full, EIO, etc.),
+            # clean up the empty tmp we just created so the next
+            # attempt can re-open it cleanly.
             with contextlib.suppress(OSError):
                 tmp.unlink(missing_ok=True)
             raise
@@ -581,9 +600,9 @@ class HfModelSync:
             "AsyncRetrying with reraise=True exhausted without raising"
         )
 
-    async def _fetch_config_with_retry(self, repo_id: str, sha: str) -> str:
+    async def _fetch_config_with_retry(self, repo_id: str, sha: str) -> bytes:
         """Retry wrapper around `_fetch_config`. Returns raw response
-        text — see `_fetch_config` docstring for why bytes-not-dict."""
+        bytes — see `_fetch_config` docstring for why bytes-not-text."""
         retryer = AsyncRetrying(
             stop=stop_after_attempt(self._retry_attempts),
             wait=wait_exponential(min=self._retry_wait_min_s, max=self._retry_wait_max_s),
@@ -615,23 +634,29 @@ class HfModelSync:
             )
         return payload
 
-    async def _fetch_config(self, repo_id: str, sha: str) -> str:
-        """Fetch HF config.json and return the **raw response text**.
+    async def _fetch_config(self, repo_id: str, sha: str) -> bytes:
+        """Fetch HF config.json and return the **raw response bytes**.
 
-        Returning text (not parsed dict) is load-bearing for ADR-015
-        invariant #2: the caller writes these bytes to disk verbatim
-        BEFORE parsing them, so a future schema-evolution audit can
-        compare the exact bytes HF returned against the documented
-        schema rather than our reserialization of them. Parsing and
-        shape validation happen in `sync_model` AFTER persistence so
-        a shape failure still leaves the raw bytes on disk for the
-        investigator.
+        Returning bytes (not parsed dict, not decoded text) is load-
+        bearing for ADR-015 invariant #2: the caller writes these
+        bytes to disk byte-identical BEFORE parsing them, so a
+        future schema-evolution audit can compare the exact bytes HF
+        returned against the documented schema. `response.text`
+        decodes via httpx's charset detection (which can normalize,
+        BOM-strip, or mojibake-on-mislabeled-charset) — using it
+        here would corrupt the cache for any non-ASCII or charset-
+        labeled response.
 
-        Only HTTP-level errors are raised here (so the retry path can
-        see them); shape errors are the caller's problem.
+        Parsing and shape validation happen in `sync_model` AFTER
+        persistence so a shape failure still leaves the raw bytes
+        on disk for the investigator. `json.loads` accepts bytes
+        directly (auto-detects UTF-8/16/32).
+
+        Only HTTP-level errors are raised here (so the retry path
+        can see them); shape errors are the caller's problem.
         """
         url = f"{HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json"
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.get(url, headers=self._headers())
         response.raise_for_status()
-        return response.text
+        return response.content

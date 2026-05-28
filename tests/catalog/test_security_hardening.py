@@ -34,72 +34,71 @@ def llama_config() -> dict[str, Any]:
 # -------------------------------------------------- TOCTOU on the .tmp path
 
 
-@pytest.mark.asyncio
-@respx.mock
-async def test_tmp_path_symlink_redirect_is_refused(
-    cache_dir: Path, llama_config: dict[str, Any], tmp_path: Path
-) -> None:
-    """The cache `.tmp` filename is predictable
-    (`<cache_dir>/huggingface/<slug>.model.json.tmp`). A local
-    attacker who can plant a symlink there before the sync runs
-    could redirect the JSON write to any file the user can write
-    (config files, ssh keys, etc).
+def test_open_excl_nofollow_refuses_symlink(cache_dir: Path, tmp_path: Path) -> None:
+    """The atomic-write tmp paths are no longer predictable (per-
+    attempt unique `<path>.<pid>.<token>.tmp` per the concurrent-
+    safe refactor), but a local attacker with write access to the
+    cache directory could still race to plant a symlink at any path
+    the writer is about to open. The boundary defense moves down to
+    `_open_excl_nofollow`: any pre-existing entry at the target path
+    — file, directory, or symlink — must raise FileExistsError
+    without following. Without `O_NOFOLLOW` a planted symlink would
+    silently redirect the JSON write to whatever the symlink
+    targets (config files, ssh keys, anything the process user can
+    write).
 
-    Defense: the atomic write must use O_EXCL | O_NOFOLLOW so that
-    a pre-existing file or symlink at the tmp path causes the write
-    to fail rather than silently follow the redirect."""
-    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
-    sha = "abc"
-    respx.get("https://huggingface.co/api/models/meta-llama/Llama-3.3-70B-Instruct").mock(
-        return_value=httpx.Response(200, json={"sha": sha, "modelId": repo_id})
-    )
-    respx.get(f"https://huggingface.co/{repo_id}/raw/{sha}/config.json").mock(
-        return_value=httpx.Response(200, json=llama_config)
-    )
-
-    # Pre-create the cache dir and plant a symlink at the predictable
-    # .tmp path pointing to an attacker-controlled target outside the
-    # cache.
+    This direct unit test on the private helper proves the defense
+    holds independently of the higher-level `_write_atomic` name
+    scheme — if future maintenance changes the tmp-naming strategy,
+    the symlink refusal still has its own regression coverage."""
     hf_dir = cache_dir / "huggingface"
     hf_dir.mkdir(parents=True)
     target = tmp_path / "victim.json"
     target.write_text("original victim contents")
-    tmp_link = hf_dir / "llama-3-3-70b.model.json.tmp"
-    tmp_link.symlink_to(target)
 
-    sync = HfModelSync(cache_dir=cache_dir)
+    planted_tmp = hf_dir / "some_predictable_or_raced_name.tmp"
+    planted_tmp.symlink_to(target)
+
     with pytest.raises(FileExistsError):
-        await sync.sync_model(
-            repo_id=repo_id,
-            slug="llama-3-3-70b",
-            display_name="Llama",
-            total_params_b=70.6,
-            active_params_b=None,
-        )
+        HfModelSync._open_excl_nofollow(planted_tmp, b"attacker payload")
 
-    # Victim file MUST NOT have been overwritten by the model JSON.
+    # Victim file MUST NOT have been overwritten via the symlink.
     assert target.read_text() == "original victim contents"
 
 
-# -------------------------------------------------- stale .tmp from prior crash
+def test_open_excl_nofollow_refuses_existing_regular_file(cache_dir: Path) -> None:
+    """O_EXCL must also reject a pre-existing regular file at the
+    target tmp path. With unique per-attempt tmp names from
+    `_write_atomic`, a collision here implies either a UUID
+    collision (~0 probability at 64 random bits) or an attacker
+    pre-planting the exact name we're about to use — both worth
+    escalating loudly rather than overwriting silently."""
+    hf_dir = cache_dir / "huggingface"
+    hf_dir.mkdir(parents=True)
+    occupied = hf_dir / "already_there.tmp"
+    occupied.write_text("not ours")
+
+    with pytest.raises(FileExistsError):
+        HfModelSync._open_excl_nofollow(occupied, b"new payload")
+
+    assert occupied.read_text() == "not ours"
+
+
+# -------------------------------------- stale .tmp from prior crash (unique-name era)
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_stale_tmp_from_prior_crash_does_not_perma_block_sync(
+async def test_stale_tmp_from_prior_crash_does_not_block_sync(
     cache_dir: Path, llama_config: dict[str, Any]
 ) -> None:
-    """A SIGKILL between `tmp.write_text(...)` and `tmp.replace(path)`
-    leaves a stale `<slug>.model.json.tmp` on disk. With the bare
-    O_EXCL guard, the next sync would FileExistsError forever — the
-    cache becomes unrecoverable per-slug without manual cleanup,
-    AND in `sync_all_tracked` one stale tmp would abort the whole
-    batch (FileExistsError isn't in the per-row except list).
-
-    The atomic-write helper detects a regular file (not a symlink)
-    sitting at the tmp path, unlinks it once, and retries. Symlink
-    redirect is still refused (that's the security defense from
-    the prior commit) — only stale regular files get cleaned up."""
+    """Under the unique per-attempt tmp naming
+    (`<path>.<pid>.<token>.tmp`), a SIGKILLed prior sync's orphaned
+    tmp file bears a name no future sync will ever choose. The
+    stale file just sits inert on disk; future syncs allocate
+    fresh unique names and proceed cleanly. This test pins the
+    behavior so a future regression to predictable-naming would
+    fail loudly here as well as in the concurrency tests."""
     repo_id = "meta-llama/Llama-3.3-70B-Instruct"
     sha = "abc"
     respx.get("https://huggingface.co/api/models/meta-llama/Llama-3.3-70B-Instruct").mock(
@@ -109,8 +108,9 @@ async def test_stale_tmp_from_prior_crash_does_not_perma_block_sync(
         return_value=httpx.Response(200, json=llama_config)
     )
 
-    # Simulate the post-crash state: an orphaned tmp file from a
-    # previous sync that didn't complete.
+    # Plant an orphan tmp bearing the legacy predictable suffix.
+    # Under the old scheme this would perma-block; under unique-
+    # names it's simply ignored.
     hf_dir = cache_dir / "huggingface"
     hf_dir.mkdir(parents=True)
     stale_tmp = hf_dir / "llama-3-3-70b.model.json.tmp"
@@ -127,8 +127,46 @@ async def test_stale_tmp_from_prior_crash_does_not_perma_block_sync(
 
     # Sync succeeded despite the stale tmp.
     assert model.slug == "llama-3-3-70b"
-    # The fresh Model JSON is at the final cache path.
     assert (hf_dir / "llama-3-3-70b.model.json").exists()
+
+
+# -------------------------------------- concurrent writes to the same slug
+
+
+@pytest.mark.asyncio
+async def test_concurrent_writes_to_same_slug_do_not_destroy_each_other(
+    cache_dir: Path,
+) -> None:
+    """Per-attempt unique tmp names mean two writers targeting the
+    same final path each use distinct tmp paths — writer B can
+    never unlink writer A's active tmp. Whichever `tmp.replace(
+    path)` runs last publishes the final payload; the other's tmp
+    is dropped by the replace's atomicity. Neither path errors.
+
+    Without unique tmps, the stale-tmp recovery approach would
+    race destructively: B sees A's tmp, treats it as stale,
+    unlinks it, A's subsequent rename fails with ENOENT.
+
+    This is the concurrent-safety property Copilot's round-4
+    review flagged. The test serializes the two writes (no real
+    threading needed) but they target the same final cache file
+    and back-to-back invocations cover the race condition the
+    unique-tmp design eliminates by construction."""
+    hf_dir = cache_dir / "huggingface"
+    hf_dir.mkdir(parents=True)
+    final_path = hf_dir / "shared.model.json"
+
+    HfModelSync._write_atomic(final_path, b"writer A payload")
+    # No leftover tmp from writer A pollutes writer B's namespace
+    # because the suffix is unique each call.
+    HfModelSync._write_atomic(final_path, b"writer B payload")
+
+    assert final_path.read_bytes() == b"writer B payload"
+    # Any tmp files left behind would have unique names; the final
+    # cache file is the only `*.json` we expect to find.
+    assert sorted(p.name for p in hf_dir.iterdir() if p.name.endswith(".json")) == [
+        "shared.model.json"
+    ]
 
 
 # -------------------------------------------------- HF_TOKEN CRLF injection

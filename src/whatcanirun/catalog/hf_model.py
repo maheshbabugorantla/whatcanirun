@@ -190,10 +190,13 @@ class Model(BaseModel):
         its `architectures` string, or via `seeds/tracked_models.yaml`'s
         `kv_cache_strategy_override` workflow).
 
-        Family-specific extractors (DeepSeek MLA, Mixtral MoE) live in
-        `catalog/families/` and call into this with the appropriate
-        family + strategy overrides when the auto-detection isn't
-        sufficient.
+        Family specifics (DeepSeek MLA, Mixtral / DeepSeek MoE) need
+        no separate factory — their auto-detected family +
+        kv_cache_strategy plus the `raw_config` carrying MLA-specific
+        keys (`kv_lora_rank`, `qk_rope_head_dim`, `qk_nope_head_dim`,
+        `v_head_dim`) and MoE-specific keys (`n_routed_experts`,
+        `num_experts_per_tok`, `num_local_experts`) is enough for
+        M07's KV / throughput math to take the right branch.
 
         Required raw_config keys: `num_hidden_layers`, `num_attention_heads`,
         `num_key_value_heads`, `hidden_size`, `max_position_embeddings`,
