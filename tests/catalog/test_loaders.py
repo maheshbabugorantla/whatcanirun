@@ -87,6 +87,75 @@ class TestLoadGpuSupplements:
         assert "list" in str(exc_info.value).lower()
 
 
+class TestLoadTrackedModels:
+    def test_loads_single_row(self, tmp_path: Path) -> None:
+        from whatcanirun.catalog.loaders import load_tracked_models
+
+        yaml = """\
+- slug: llama-3-3-70b
+  hf_repo_id: meta-llama/Llama-3.3-70B-Instruct
+  display_name: Llama 3.3 70B Instruct
+  total_params_b: 70.6
+"""
+        f = tmp_path / "t.yaml"
+        f.write_text(yaml)
+        rows = load_tracked_models(f)
+        assert len(rows) == 1
+        assert rows[0].slug == "llama-3-3-70b"
+
+    def test_minimal_row_with_only_slug_and_repo_id_loads(self, tmp_path: Path) -> None:
+        """The per-user `user_models.yaml` extension file is populated
+        by M09's `resolve_model` after eliciting only
+        `(slug, hf_repo_id)` from the user — they don't know
+        `total_params_b` or `display_name`. A row with just slug +
+        repo_id must validate so the M09 lazy-sync path can flow
+        through `sync_all_tracked` end-to-end. Null params are honest
+        and route downstream M07 cells to `requires_measurement` per
+        ADR-010 rather than us fabricating a value."""
+        from whatcanirun.catalog.loaders import load_tracked_models
+
+        yaml = """\
+- slug: my-custom-model
+  hf_repo_id: vendor/custom-model
+"""
+        f = tmp_path / "user.yaml"
+        f.write_text(yaml)
+        rows = load_tracked_models(f)
+        assert len(rows) == 1
+        assert rows[0].slug == "my-custom-model"
+        assert rows[0].hf_repo_id == "vendor/custom-model"
+        assert rows[0].total_params_b is None
+        assert rows[0].active_params_b is None
+        assert rows[0].display_name is None
+
+    def test_intra_file_duplicate_slug_rejected(self, tmp_path: Path) -> None:
+        """A YAML with two rows sharing the same `slug` is a typo /
+        merge-conflict footgun — without explicit detection, both rows
+        load, both syncs run, and the second one silently overwrites
+        the first in the cache (last-write-wins). Catch at load time
+        with a clear error naming the duplicated slug."""
+        from whatcanirun.catalog.loaders import load_tracked_models
+
+        yaml = """\
+- slug: foo
+  hf_repo_id: vendor/A1
+  display_name: A1
+  total_params_b: 7.0
+- slug: foo
+  hf_repo_id: vendor/A2
+  display_name: A2
+  total_params_b: 7.0
+- slug: bar
+  hf_repo_id: vendor/B
+  display_name: B
+  total_params_b: 7.0
+"""
+        f = tmp_path / "t.yaml"
+        f.write_text(yaml)
+        with pytest.raises(SeedLoadError, match="duplicate slug"):
+            load_tracked_models(f)
+
+
 class TestLoadQuantizations:
     def test_loads_single_row(self, tmp_path: Path) -> None:
         f = tmp_path / "q.yaml"

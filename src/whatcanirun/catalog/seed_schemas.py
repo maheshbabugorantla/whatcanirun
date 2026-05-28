@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from whatcanirun.catalog.hf_model import KvCacheStrategy
+
 FormFactor = Literal["SXM", "PCIe", "NVL", "OAM"]
 
 
@@ -52,3 +54,35 @@ class Quantization(BaseModel):
     introduced_architecture: str
     notes: str
     experimental: bool = Field(default=False)
+
+
+class TrackedModelRow(BaseModel):
+    """One row of `seeds/tracked_models.yaml` (or the per-user
+    `~/.config/whatcanirun/user_models.yaml` extension file).
+
+    Maps a ComputePrices `slug` to a Hugging Face `hf_repo_id` and
+    optionally carries the parameter counts (`total_params_b`, plus
+    `active_params_b` for MoE) that HF `config.json` doesn't itself
+    publish — those come from the model card / safetensors index.
+    Project-controlled `seeds/tracked_models.yaml` rows hand-curate
+    these for precision; the per-user `user_models.yaml` rows that
+    M09's `resolve_model` writes after eliciting only
+    `(slug, hf_repo_id)` from the user leave them None. Downstream
+    `Model.total_params_b` is also `float | None`, and M07 routes
+    null total_params to `requires_measurement` per ADR-010 rather
+    than fabricating a value — preserving the trust contract.
+
+    `display_name` is similarly optional: when omitted, the
+    `HfModelSync.sync_model` projection derives it from
+    `hf_repo_id`'s last segment.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str
+    hf_repo_id: str
+    display_name: str | None = None
+    total_params_b: float | None = None
+    active_params_b: float | None = None
+    kv_cache_strategy_override: KvCacheStrategy | None = None
+    notes: str = ""

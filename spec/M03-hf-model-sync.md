@@ -25,7 +25,42 @@ class HfModelSync:
 
     def __init__(self, cache_dir: Path, hf_token: str | None = None): ...
 
-    async def sync_model(self, repo_id: str) -> Model: ...
+    async def sync_model(
+        self,
+        *,
+        slug: str,
+        repo_id: str,
+        display_name: str | None = None,
+        total_params_b: float | None = None,
+        active_params_b: float | None = None,
+        kv_cache_strategy_override: KvCacheStrategy | None = None,
+    ) -> Model:
+        """Lazy-sync primitive. Minimum invocation is
+        `sync_model(slug=..., repo_id=...)` — that's what M09's
+        unknown-model dispatcher (Case 1 / Case 3) calls when it knows
+        the user-facing slug + HF repo_id but nothing else. `slug` is
+        the cost-cells join key and can't be auto-derived from
+        `repo_id` (different vocabulary); everything else has sensible
+        defaults.
+
+          - `display_name` falls back to `repo_id`'s last segment
+            (e.g. `meta-llama/Llama-3.3-70B-Instruct` →
+            `Llama-3.3-70B-Instruct`).
+          - `total_params_b` / `active_params_b` stay `None` when not
+            supplied — neither lives in HF `config.json`. M07 treats
+            null total params as `requires_measurement` per ADR-010,
+            preserving the trust contract.
+
+        `sync_all_tracked` calls this with all kwargs populated from
+        the YAML row, so project-controlled tracked rows still get
+        precise metadata.
+
+        Both `slug` and `repo_id` are validated at this boundary — they
+        are interpolated into cache paths and HF URLs respectively, so
+        a malformed value here is a path-traversal / URL-injection
+        vector. Invalid values raise `ValueError` BEFORE any HTTP call
+        or filesystem write.
+        """
 
     async def sync_all_tracked(
         self,
@@ -137,12 +172,12 @@ Maps ComputePrices slug → HF repo_id:
 
 ### Family-specific extraction
 
-Each family has its own quirk. Extraction logic in `src/whatcanirun/catalog/families/`:
+The single `Model.from_hf_config` factory in `src/whatcanirun/catalog/hf_model.py` handles every family via auto-detection — no per-family submodule. `detect_architecture_family(raw_config)` reads `architectures[0]`; `detect_kv_cache_strategy(family)` then routes DeepSeek-V3 to `mla` and everything else to `standard_gqa`. Family-specific keys ride through in `raw_config` for M07 to read when its MLA / MoE branches need them:
 
-| Family | Quirk | Implementation |
+| Family | Quirk | Where the M07 branch reads from |
 |---|---|---|
-| **llama, qwen, qwen3, mistral, phi, gemma** | Standard GQA | `num_key_value_heads` direct from config |
-| **deepseek_v3** | MLA — `kv_lora_rank` + `qk_rope_head_dim` instead of standard KV heads | Read both fields from raw_config; n_kv_heads is informational |
+| **llama, qwen, qwen3, mistral, phi, gemma** | Standard GQA | `num_key_value_heads` direct from `raw_config` |
+| **deepseek_v3** | MLA — `kv_lora_rank` + `qk_rope_head_dim` instead of standard KV heads | Both fields preserved in `raw_config`; `n_kv_heads` is informational |
 | **mixtral** | MoE — sparse experts | `total_params_b` from safetensors total; `active_params_b = num_experts_per_tok × per_expert_params_b` |
 | **gpt_oss** | MoE — similar to Mixtral | Same approach; verify against HF model card |
 | **unknown** | Raise `UnsupportedArchitectureFamily` | Log warning; M03 skips this model with `raw_config` still preserved |
