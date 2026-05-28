@@ -41,6 +41,7 @@ import json
 import logging
 import os
 import random
+import re
 import secrets
 from pathlib import Path
 from typing import Any
@@ -68,6 +69,16 @@ def _now() -> dt.datetime:
     """Module-level clock so tests can monkeypatch TTL behavior
     without sleeping."""
     return dt.datetime.now(dt.UTC)
+
+
+# Bearer-token character validation. Header values must not contain
+# CR, LF, NUL, or other non-printable control chars — RFC 7230
+# forbids them in field values, and an unguarded `\r\n` in a key
+# could enable CRLF response-splitting on HTTP clients that don't
+# validate. httpx's h11 transport rejects these at serialization
+# today, but defense-in-depth at the boundary is cheap and matches
+# M03's HF_TOKEN posture.
+_AA_KEY_ILLEGAL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _jitter_seconds() -> float:
@@ -131,6 +142,13 @@ class ArtificialAnalysisClient:
         if api_key is None:
             env_key = os.environ.get("AA_API_KEY", "").strip()
             api_key = env_key or None
+        if api_key is not None and _AA_KEY_ILLEGAL_CHARS_RE.search(api_key):
+            raise ValueError(
+                "AA_API_KEY contains illegal control characters (CR / LF / "
+                "NUL / other non-printable ASCII). A key with embedded "
+                "`\\r\\n` could enable CRLF header-injection in some HTTP "
+                "transports; rejecting at the boundary."
+            )
         self._api_key = api_key
         self._base_url = base_url
         self._timeout_s = timeout_s
@@ -156,33 +174,36 @@ class ArtificialAnalysisClient:
         MUST NOT propagate to the parent tool call — AA is optional
         enrichment, and M07's Tier-2 routing treats an empty list
         as functionally identical to "AA doesn't track this slug".
-        The fallback order on HTTP failure:
+        "Failure" here covers BOTH HTTP-level failures (4xx/5xx/
+        connection errors) AND shape-validation failures (missing
+        `data` key, non-list `data`) — because from the parent
+        tool's perspective the two are indistinguishable: AA is
+        broken, M07 must route around it. A schema-break on a
+        stale-cache refresh is caught here, NOT at the projection
+        layer; the stale cache is served and the warning logs the
+        underlying error.
+
+        Fallback order:
           1. Cache hit within TTL → cached payload (no failure path)
           2. Stale cache → return stale payload, M09 marks
              `freshness["artificial_analysis"]` accordingly
           3. Latest cache missing but snapshot exists → most-recent
              valid snapshot
-          4. Nothing on disk → return [] and log a warning so the
-             operator can investigate
+          4. Nothing on disk (or cache itself is shape-broken) →
+             return [] and log a warning so the operator can
+             investigate
 
-        Shape failures (missing `data` array, non-list `data`) still
-        raise `ValueError` at the boundary so an upstream schema
-        change surfaces loudly rather than silently producing an
-        empty list that downstream code mistakes for "no models
-        tracked".
+        `get_raw_response` is the UN-wrapped variant: M09 trust-
+        envelope provenance calls it directly and any schema break
+        propagates because the caller explicitly opted in to raw
+        bytes.
         """
         try:
             payload = await self.get_raw_response()
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            data = self._extract_data_list(payload)
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
             recovered = self._recover_from_disk()
-            if recovered is not None:
-                _log.warning(
-                    "Artificial Analysis upstream failed (%s); serving stale "
-                    "cache. M09 trust envelope freshness signal reflects this.",
-                    exc,
-                )
-                payload = recovered
-            else:
+            if recovered is None:
                 _log.warning(
                     "Artificial Analysis upstream failed (%s) and no cache "
                     "exists; returning empty list (AA is optional, parent "
@@ -190,7 +211,32 @@ class ArtificialAnalysisClient:
                     exc,
                 )
                 return []
+            try:
+                data = self._extract_data_list(recovered)
+            except ValueError as cache_exc:
+                _log.warning(
+                    "Artificial Analysis upstream failed (%s) AND cached "
+                    "payload also fails shape validation (%s); returning "
+                    "empty list. Operator should investigate the cache "
+                    "and refetch.",
+                    exc,
+                    cache_exc,
+                )
+                return []
+            _log.warning(
+                "Artificial Analysis upstream failed (%s); serving stale "
+                "cache. M09 trust envelope freshness signal reflects this.",
+                exc,
+            )
+        return [AaModelRow.project(row) for row in data]
 
+    @staticmethod
+    def _extract_data_list(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """Pull the `data` array out of an AA payload, raising
+        ValueError on shape mismatch. Centralized so the live path
+        AND the cache-recovery path both go through the same
+        validation — a schema break that crashes the live response
+        also rejects the cached-payload path consistently."""
         if "data" not in payload:
             raise ValueError(
                 f"AA response missing required `data` array; got top-level keys {sorted(payload)!r}"
@@ -198,7 +244,7 @@ class ArtificialAnalysisClient:
         data = payload["data"]
         if not isinstance(data, list):
             raise ValueError(f"AA response `data` must be a list, got {type(data).__name__}")
-        return [AaModelRow.project(row) for row in data]
+        return data
 
     async def get_raw_response(self) -> dict[str, Any]:
         """Return the full unparsed AA payload (top-level dict with
@@ -285,30 +331,73 @@ class ArtificialAnalysisClient:
     def _write_snapshot(self, payload_bytes: bytes) -> Path:
         """Append a gzipped snapshot of the raw bytes under
         `models.snapshots/<ISO-8601>.json.gz`. Mirrors M02's
-        snapshot pattern — 30-day audit window driven by `_now()`."""
+        snapshot pattern — 30-day audit window driven by `_now()`.
+
+        Uses the same per-attempt-unique tmp + O_EXCL|O_NOFOLLOW +
+        rename pattern as `_write_cache`. The ISO-8601 timestamp
+        has 1-second granularity, so two concurrent refreshes
+        within the same second would otherwise collide on the
+        destination path — one writer truncates the other's bytes
+        mid-write and the snapshot ends up corrupt. With unique
+        tmps + final rename the destination is written atomically;
+        worst case is the second writer overwrites the first's
+        completed snapshot, which is a benign data-equality
+        situation rather than a corrupt-file one.
+        """
         self._snapshots_dir().mkdir(parents=True, exist_ok=True)
         ts = _now().strftime("%Y-%m-%dT%H-%M-%SZ")
         path = self._snapshots_dir() / f"{ts}.json.gz"
-        with gzip.open(path, "wb") as f:
-            f.write(payload_bytes)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp")
+        fd = os.open(
+            tmp,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            with os.fdopen(fd, "wb") as raw_f, gzip.GzipFile(fileobj=raw_f, mode="wb") as gz_f:
+                gz_f.write(payload_bytes)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            raise
+        tmp.replace(path)
         return path
 
     async def _fetch_cached_or_live(self) -> dict[str, Any]:
         """Cache-first read: if the on-disk payload is within the
         TTL window, return it without touching AA. Otherwise fetch,
-        persist (cache + snapshot), and return.
+        snapshot (always — ADR-015 forensic evidence), and promote
+        to the `latest` cache ONLY IF shape-valid.
+
+        Order matters: snapshot FIRST so ADR-015 invariant #2 ("raw
+        bytes verbatim before parsing") holds even on broken
+        upstream responses. The shape-validation gate on the
+        `latest` write protects the known-good fallback path — a
+        schema-breaking refresh would otherwise clobber the
+        previous good cache, defeating the graceful-fallback
+        contract `get_models` depends on. The investigator can
+        still read the broken bytes from the snapshot file.
         """
         if self._cache_age_within_ttl():
             return self._read_cache()
         payload_bytes = await self._fetch_raw_with_retry()
-        self._write_cache(payload_bytes)
+        # Snapshot ALWAYS (ADR-015) — broken responses are
+        # forensic evidence too.
         self._write_snapshot(payload_bytes)
-        # _fetch_raw already shape-validated this exact byte
-        # sequence (dict at top level), so parsing here is safe; the
-        # explicit isinstance keeps mypy honest about the Any boundary
-        # of `json.loads` without re-doing the runtime check.
         parsed: Any = json.loads(payload_bytes)
         assert isinstance(parsed, dict)
+        # Only promote to the known-good `latest` cache if shape is
+        # valid. Letting a broken-shape payload land there would
+        # break the get_models fallback path (which trusts the
+        # latest cache as the recovery source).
+        try:
+            self._extract_data_list(parsed)
+        except ValueError:
+            # Re-raise so get_models catches via its ValueError
+            # handler and falls back to the prior known-good cache
+            # (which we deliberately did NOT overwrite).
+            raise
+        self._write_cache(payload_bytes)
         return parsed
 
     def _recover_from_disk(self) -> dict[str, Any] | None:

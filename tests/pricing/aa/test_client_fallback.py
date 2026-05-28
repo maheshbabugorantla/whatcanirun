@@ -85,6 +85,53 @@ async def test_5xx_with_recent_cache_serves_cache_silently(
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_schema_breaking_response_falls_back_to_cache_not_raises(
+    fast_client: ArtificialAnalysisClient, cache_dir: Path
+) -> None:
+    """If AA ships a payload restructuring (e.g. renames `data` to
+    `models`), the shape-validation `ValueError` MUST NOT propagate
+    to the parent tool call. The fallback machinery should recover
+    from the existing cache. This is the same trust-contract path
+    HTTP failures take — the failure mode (upstream broken,
+    parent must keep working) is identical, the cause just differs.
+
+    Pre-warm a valid cache, walk time past TTL so a refresh fires,
+    then serve a 200 with a missing-`data` payload. Caller sees the
+    cached rows, not a crash."""
+    from whatcanirun.pricing import artificial_analysis as aa_mod
+
+    aa_dir = cache_dir / "artificial_analysis"
+    aa_dir.mkdir(parents=True)
+    cache_file = aa_dir / "models.latest.json"
+    cache_file.write_bytes(
+        b'{"status": 200, "data": [{"id": "stale-row", "slug": "stale", '
+        b'"name": "stale", "model_creator": {"id": "y", "name": "v", '
+        b'"slug": "v"}, "release_date": "2026-01-01", "pricing": {}, '
+        b'"evaluations": {}, "median_output_tokens_per_second": 100.0, '
+        b'"median_time_to_first_token_seconds": 0.5, '
+        b'"median_time_to_first_answer_token": 1.0}]}'
+    )
+    # Make the existing cache stale so a refresh fires.
+    import datetime as dt_mod
+
+    real_mtime = dt_mod.datetime.fromtimestamp(cache_file.stat().st_mtime, tz=dt_mod.UTC)
+    aa_mod._jitter_seconds = lambda: 0.0  # type: ignore[assignment]
+    aa_mod._now = lambda: real_mtime + dt_mod.timedelta(hours=12)  # type: ignore[assignment]
+
+    # AA returns 200 but with the `data` array renamed to `models`
+    # — a breaking schema change. Without the ValueError-as-
+    # fallback fix, this raises and crashes the parent tool call.
+    respx.get(AA_MODELS_URL).mock(
+        return_value=httpx.Response(200, json={"status": 200, "models": []})
+    )
+
+    rows = await fast_client.get_models()
+    assert len(rows) == 1
+    assert rows[0].slug == "stale"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_5xx_with_stale_cache_serves_stale_silently(
     fast_client: ArtificialAnalysisClient,
     cache_dir: Path,

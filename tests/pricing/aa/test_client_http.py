@@ -125,31 +125,35 @@ async def test_x_api_key_header_set_on_request(cache_dir: Path, aa_payload: dict
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_response_missing_data_array_rejected(
+async def test_get_models_returns_empty_on_missing_data_key(
     cache_dir: Path,
 ) -> None:
-    """If AA returns a payload missing the `data` key, surface the
-    error at the boundary with a descriptive ValueError. Silently
-    treating it as an empty list would mask an upstream schema
-    change."""
+    """If AA returns a payload missing the `data` key, `get_models`
+    routes the shape failure through the same graceful-fallback
+    path as HTTP failures (no cache → empty list + logged warning).
+    AA is optional and the parent tool call must keep working — the
+    operator sees the schema break via the warning log, not via a
+    propagated exception. The unwrapped `get_raw_response` accessor
+    still surfaces the broken payload directly to its caller (M09's
+    trust-envelope provenance code opts in to that)."""
     respx.get(_AA_URL).mock(return_value=httpx.Response(200, json={"status": 200}))
 
     client = ArtificialAnalysisClient(cache_dir=cache_dir, api_key="k")
-    with pytest.raises(ValueError, match="data"):
-        await client.get_models()
+    rows = await client.get_models()
+    assert rows == []
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_response_with_non_list_data_rejected(
+async def test_get_models_returns_empty_on_non_list_data(
     cache_dir: Path,
 ) -> None:
-    """If `data` is present but not a list, same loud failure."""
+    """Same graceful-fallback contract for non-list `data`."""
     respx.get(_AA_URL).mock(return_value=httpx.Response(200, json={"status": 200, "data": "oops"}))
 
     client = ArtificialAnalysisClient(cache_dir=cache_dir, api_key="k")
-    with pytest.raises(ValueError, match="data"):
-        await client.get_models()
+    rows = await client.get_models()
+    assert rows == []
 
 
 # --------------------------------------------------------------- retry policy
