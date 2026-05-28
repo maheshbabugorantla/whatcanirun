@@ -18,6 +18,7 @@ the package surface IS the contract.
 """
 
 from whatcanirun.pricing.artificial_analysis.client import (
+    AA_ATTRIBUTION_STRING,
     AA_MODELS_URL,
     AaDisabled,
     ArtificialAnalysisClient,
@@ -33,6 +34,7 @@ from whatcanirun.pricing.artificial_analysis.slug_mapping import (
 )
 
 __all__ = [
+    "AA_ATTRIBUTION_STRING",
     "AA_MODELS_URL",
     "AaDisabled",
     "AaModelRow",

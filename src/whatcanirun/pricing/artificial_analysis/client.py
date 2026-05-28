@@ -61,6 +61,19 @@ _log = logging.getLogger(__name__)
 AA_MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models"
 DEFAULT_TIMEOUT_S = 30.0
 
+# AA's free-tier API terms require attribution on every consumer-
+# visible surface that ships an AA-sourced number. M08 wires this
+# into `TrustEnvelope.sources[].license_attribution` for any source
+# entry derived from AA data; M09's `cost-cells://provenance`
+# resource names AA prominently using this same string. Keep both
+# halves in lockstep — change the wording here only after re-reading
+# AA's current free-tier ToS at https://artificialanalysis.ai/.
+# spec/M04 § Attribution pins the exact text.
+AA_ATTRIBUTION_STRING = (
+    "Includes data from Artificial Analysis (https://artificialanalysis.ai/), "
+    "used under their free-tier API terms with attribution."
+)
+
 _TTL_SECONDS = 6 * 3600
 _JITTER_RANGE_S = 60.0
 
