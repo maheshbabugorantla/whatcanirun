@@ -195,6 +195,83 @@ async def test_raw_config_bytes_are_byte_identical_not_reserialized(
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_first_sync_persists_raw_info_per_adr_015(
+    cache_dir: Path, llama_config: dict[str, Any]
+) -> None:
+    """ADR-015 invariant #2 applies to EVERY upstream API response,
+    not just config.json. The HF model-info endpoint
+    (`/api/models/{repo_id}`) drives the revision-SHA gate that
+    decides whether we refetch config.json — its payload is just as
+    schema-sensitive (HF could rename `sha` tomorrow). When info
+    bytes are lost, a future schema-evolution audit has no way to
+    diagnose a sync that started failing.
+
+    The raw info response must land on disk verbatim BEFORE
+    `json.loads` + shape validation, mirroring the config.json
+    persistence path."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    sha = "abc123"
+
+    info_payload = {"sha": sha, "modelId": repo_id, "private": False}
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(return_value=httpx.Response(200, json=info_payload))
+    respx.get(f"{_HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json").mock(
+        return_value=httpx.Response(200, json=llama_config)
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    await sync.sync_model(
+        repo_id=repo_id,
+        slug="llama-3-3-70b",
+        display_name="Llama 3.3 70B Instruct",
+        total_params_b=70.6,
+        active_params_b=None,
+    )
+
+    raw_info_file = cache_dir / "huggingface" / "llama-3-3-70b.info.json"
+    assert raw_info_file.exists()
+    on_disk = json.loads(raw_info_file.read_bytes())
+    assert on_disk == info_payload
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_raw_info_persists_even_when_shape_validation_fails(
+    cache_dir: Path,
+) -> None:
+    """A malformed info payload (e.g. HF renames `sha` to
+    `commit_sha` in a future API revision) must STILL leave the raw
+    bytes on disk for the investigator. Pre-fix behavior: the
+    `isinstance(..., dict) or 'sha' not in payload` check in
+    `_fetch_info` raised BEFORE persistence, so the raw bytes
+    vanished. Post-fix: persist raw bytes first, then parse +
+    validate."""
+    repo_id = "meta-llama/Llama-3.3-70B-Instruct"
+    missing_sha_payload = b'{"modelId": "meta-llama/Llama-3.3-70B-Instruct"}'
+    respx.get(f"{_HF_API_BASE}/{repo_id}").mock(
+        return_value=httpx.Response(
+            200,
+            content=missing_sha_payload,
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    sync = HfModelSync(cache_dir=cache_dir)
+    with pytest.raises(ValueError, match="sha"):
+        await sync.sync_model(
+            repo_id=repo_id,
+            slug="llama-3-3-70b",
+            display_name="Llama",
+            total_params_b=70.6,
+            active_params_b=None,
+        )
+
+    raw_info_file = cache_dir / "huggingface" / "llama-3-3-70b.info.json"
+    assert raw_info_file.exists()
+    assert raw_info_file.read_bytes() == missing_sha_payload
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_raw_config_bytes_verbatim_for_non_ascii_and_bom(
     cache_dir: Path,
 ) -> None:

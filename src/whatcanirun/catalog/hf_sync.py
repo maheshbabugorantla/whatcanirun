@@ -23,7 +23,6 @@ import os
 import re
 import secrets
 from pathlib import Path
-from typing import Any
 
 import httpx
 from pydantic import ValidationError
@@ -184,7 +183,7 @@ class HfModelSync:
         cache_path = self._hf_dir / f"{slug}.model.json"
 
         try:
-            info = await self._fetch_info_with_retry(repo_id)
+            info_bytes = await self._fetch_info_with_retry(repo_id)
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             # 4xx other than 429 already escaped (retry policy didn't match);
             # only retryable errors land here.
@@ -199,6 +198,40 @@ class HfModelSync:
                 f"exists at {cache_path}"
             ) from exc
 
+        # ADR-015 invariant #2: persist the raw info response bytes
+        # BEFORE parsing. A malformed or schema-shifted info payload
+        # (HF renames `sha` → `commit_sha`, returns an HTML error
+        # page, mislabels charset) must still leave bytes on disk for
+        # the investigator. Mirrors the config.json persistence path
+        # below.
+        self._hf_dir.mkdir(parents=True, exist_ok=True)
+        self._write_atomic(self._info_raw_path(slug), info_bytes)
+
+        # Parse + shape-validate the on-disk bytes. json.loads
+        # accepts bytes directly. Failures surface as ValueError but
+        # the raw file persists per the invariant above.
+        try:
+            info = json.loads(info_bytes)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"HF model info for {repo_id!r} is not valid JSON "
+                f"(raw bytes persisted at {self._info_raw_path(slug)})"
+            ) from exc
+        if not isinstance(info, dict) or "sha" not in info:
+            raise ValueError(
+                f"HF model info for {repo_id!r} missing required `sha` field "
+                f"(raw bytes persisted at {self._info_raw_path(slug)})"
+            )
+        # HF's documented contract: sha is a non-empty string (commit
+        # hash). A non-string would silently coerce via str() and
+        # produce a malformed URL (`.../raw/None/config.json`) — fail
+        # loudly here instead.
+        if not isinstance(info["sha"], str) or not info["sha"]:
+            raise ValueError(
+                f"HF model info for {repo_id!r}: `sha` must be a non-empty "
+                f"string, got {type(info['sha']).__name__} {info['sha']!r} "
+                f"(raw bytes persisted at {self._info_raw_path(slug)})"
+            )
         sha = info["sha"]
         cached_model = self._read_cached_model(cache_path, repo_id, sha)
         if cached_model is not None:
@@ -431,6 +464,16 @@ class HfModelSync:
         """Path to the verbatim HF config.json cache for `slug` (ADR-015)."""
         return self._hf_dir / f"{slug}.config.json"
 
+    def _info_raw_path(self, slug: str) -> Path:
+        """Path to the verbatim HF model-info cache for `slug` (ADR-015).
+
+        Distinct from `_raw_path` because the two endpoints have
+        different payload shapes and a future schema-evolution audit
+        needs to compare each independently against its documented
+        contract.
+        """
+        return self._hf_dir / f"{slug}.info.json"
+
     @staticmethod
     def _read_any_cached_model(cache_path: Path, expected_repo_id: str) -> Model | None:
         """Stale-tolerant cache read for the upstream-down fallback path.
@@ -580,7 +623,7 @@ class HfModelSync:
             headers["Authorization"] = f"Bearer {self._hf_token}"
         return headers
 
-    async def _fetch_info_with_retry(self, repo_id: str) -> dict[str, Any]:
+    async def _fetch_info_with_retry(self, repo_id: str) -> bytes:
         """`_fetch_info` wrapped in tenacity retry on 429/5xx/RequestError.
 
         4xx other than 429 bubbles immediately so the caller sees the
@@ -616,23 +659,29 @@ class HfModelSync:
             "AsyncRetrying with reraise=True exhausted without raising"
         )
 
-    async def _fetch_info(self, repo_id: str) -> dict[str, Any]:
+    async def _fetch_info(self, repo_id: str) -> bytes:
+        """Fetch HF model-info endpoint and return the **raw response
+        bytes**.
+
+        Returning bytes (not parsed dict) is load-bearing for ADR-015
+        invariant #2: the caller writes these bytes to disk byte-
+        identical BEFORE parsing them, so even a malformed or
+        schema-shifted info response (HF rename `sha` → `commit_sha`,
+        HTML error page, charset-labeled JSON) leaves the raw bytes
+        on disk for the investigator. Mirrors `_fetch_config`'s
+        contract — see that docstring for the full rationale on
+        bytes-vs-text.
+
+        Parsing and shape validation happen in `sync_model` AFTER
+        persistence. Only HTTP-level errors are raised here (so the
+        retry path can see them); shape errors are the caller's
+        problem.
+        """
         url = f"{HF_API_BASE}/{repo_id}"
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.get(url, headers=self._headers())
         response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict) or "sha" not in payload:
-            raise ValueError(f"HF model info for {repo_id!r} missing required `sha` field")
-        # HF's documented contract: sha is a non-empty string (commit hash).
-        # A non-string would silently coerce via str() and produce a malformed
-        # URL (`.../raw/None/config.json`) — fail loudly here instead.
-        if not isinstance(payload["sha"], str) or not payload["sha"]:
-            raise ValueError(
-                f"HF model info for {repo_id!r}: `sha` must be a non-empty "
-                f"string, got {type(payload['sha']).__name__} {payload['sha']!r}"
-            )
-        return payload
+        return response.content
 
     async def _fetch_config(self, repo_id: str, sha: str) -> bytes:
         """Fetch HF config.json and return the **raw response bytes**.
