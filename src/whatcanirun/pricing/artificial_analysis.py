@@ -19,11 +19,28 @@ NOT `Authorization: Bearer` (verified live 2026-05-27 with a real
 key). Mirrors the M02 ComputePrices client's empty-string-is-
 anonymous env-var semantics so a CI safeguard `AA_API_KEY=""`
 doesn't accidentally enable an unusable bearer header.
+
+Cache layout per spec/M04:
+  <cache_dir>/artificial_analysis/models.latest.json    (raw bytes)
+  <cache_dir>/artificial_analysis/models.snapshots/
+    <ISO-8601>.json.gz                                   (gzipped raw)
+
+TTL is 6h (well inside AA's 1k/day budget at ~4 refreshes/day) plus
+±60s jitter so a fleet of clients doesn't refresh in lockstep at
+the hour boundary. ADR-015 bytes-verbatim: `_fetch_raw` returns
+`response.content` (bytes), cache write is binary mode, parse from
+disk bytes — the M03 round-4 lesson applied from the start.
 """
 
 from __future__ import annotations
 
+import contextlib
+import datetime as dt
+import gzip
+import json
 import os
+import random
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +56,23 @@ from whatcanirun.pricing.aa_projections import AaModelRow
 
 AA_MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models"
 DEFAULT_TIMEOUT_S = 30.0
+
+_TTL_SECONDS = 6 * 3600
+_JITTER_RANGE_S = 60.0
+
+
+def _now() -> dt.datetime:
+    """Module-level clock so tests can monkeypatch TTL behavior
+    without sleeping."""
+    return dt.datetime.now(dt.UTC)
+
+
+def _jitter_seconds() -> float:
+    """Random offset added to the TTL cutoff on every cache-age
+    check. Desynchronizes fleet-wide refreshes so we don't hammer AA
+    in lockstep when caches expire at the same wall-clock instant.
+    Tests monkeypatch to 0.0 to assert TTL boundaries exactly."""
+    return random.uniform(-_JITTER_RANGE_S, _JITTER_RANGE_S)
 
 
 class AaDisabled(Exception):  # noqa: N818  (name is the public contract)
@@ -66,7 +100,8 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
 
 
 class ArtificialAnalysisClient:
-    """AA `/api/v2/data/llms/models` client with optional auth.
+    """AA `/api/v2/data/llms/models` client with optional auth,
+    6-hour cache, and ADR-015 byte-identical snapshot persistence.
 
     All AA-touching methods raise `AaDisabled` when `self.enabled`
     is False. Callers SHOULD branch on `client.enabled` rather than
@@ -139,9 +174,108 @@ class ArtificialAnalysisClient:
                 "AA_API_KEY is not configured; AA enrichment is off. "
                 "Set the env var or pass `api_key=...` to enable."
             )
-        return await self._fetch_with_retry()
+        return await self._fetch_cached_or_live()
 
-    # ---------------------------------------------------------------- internals
+    # ---------------------------------------------------------------- cache layer
+
+    def _aa_dir(self) -> Path:
+        return self.cache_dir / "artificial_analysis"
+
+    def _cache_path(self) -> Path:
+        """Path to `models.latest.json` — raw upstream bytes."""
+        return self._aa_dir() / "models.latest.json"
+
+    def _snapshots_dir(self) -> Path:
+        return self._aa_dir() / "models.snapshots"
+
+    def _cache_age_within_ttl(self) -> bool:
+        """True if the cache file exists and was written within the
+        last 6h + jitter window. Jitter applies BOTH ways so a
+        cache barely past the nominal cutoff still serves ~50% of
+        the time — desyncs the refresh fleet at hour boundaries."""
+        path = self._cache_path()
+        if not path.exists():
+            return False
+        mtime = dt.datetime.fromtimestamp(path.stat().st_mtime, tz=dt.UTC)
+        age_s = (_now() - mtime).total_seconds()
+        return age_s < (_TTL_SECONDS + _jitter_seconds())
+
+    def _read_cache(self) -> dict[str, Any]:
+        """Parse the cached bytes. `json.loads` accepts bytes
+        directly (auto-detects UTF-8/16/32) so we never round-trip
+        through `read_text()` and lose bytes for non-ASCII payloads.
+        Shape-validated on the way out for the same reason
+        `_fetch_raw` does it — a corrupt cache shouldn't poison
+        the projection."""
+        decoded: Any = json.loads(self._cache_path().read_bytes())
+        if not isinstance(decoded, dict):
+            raise ValueError(
+                f"AA cache at {self._cache_path()} is not a JSON object, "
+                f"got {type(decoded).__name__}"
+            )
+        return decoded
+
+    def _write_cache(self, payload_bytes: bytes) -> None:
+        """Atomic write of raw upstream bytes to `models.latest.json`.
+
+        Uses the M03 per-attempt-unique tmp + rename pattern so
+        concurrent syncs of the same cache file don't race-destroy
+        each other's tmp. ADR-015 byte-identity: bytes go in
+        verbatim, no text-mode reencoding.
+        """
+        self._aa_dir().mkdir(parents=True, exist_ok=True)
+        path = self._cache_path()
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp")
+        # O_EXCL | O_NOFOLLOW refuses to follow a planted symlink
+        # at the tmp path (defense against local-attacker symlink
+        # redirect to /etc/passwd-class files), and refuses any
+        # pre-existing entry — with 64 bits of token entropy a
+        # collision is either ~0-probability random or an attacker
+        # pre-planting the exact name, both worth escalating.
+        fd = os.open(
+            tmp,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(payload_bytes)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            raise
+        tmp.replace(path)
+
+    def _write_snapshot(self, payload_bytes: bytes) -> Path:
+        """Append a gzipped snapshot of the raw bytes under
+        `models.snapshots/<ISO-8601>.json.gz`. Mirrors M02's
+        snapshot pattern — 30-day audit window driven by `_now()`."""
+        self._snapshots_dir().mkdir(parents=True, exist_ok=True)
+        ts = _now().strftime("%Y-%m-%dT%H-%M-%SZ")
+        path = self._snapshots_dir() / f"{ts}.json.gz"
+        with gzip.open(path, "wb") as f:
+            f.write(payload_bytes)
+        return path
+
+    async def _fetch_cached_or_live(self) -> dict[str, Any]:
+        """Cache-first read: if the on-disk payload is within the
+        TTL window, return it without touching AA. Otherwise fetch,
+        persist (cache + snapshot), and return.
+        """
+        if self._cache_age_within_ttl():
+            return self._read_cache()
+        payload_bytes = await self._fetch_raw_with_retry()
+        self._write_cache(payload_bytes)
+        self._write_snapshot(payload_bytes)
+        # _fetch_raw already shape-validated this exact byte
+        # sequence (dict at top level), so parsing here is safe; the
+        # explicit isinstance keeps mypy honest about the Any boundary
+        # of `json.loads` without re-doing the runtime check.
+        parsed: Any = json.loads(payload_bytes)
+        assert isinstance(parsed, dict)
+        return parsed
+
+    # ---------------------------------------------------------------- HTTP layer
 
     def _headers(self) -> dict[str, str]:
         """Build request headers. AA uses `X-Api-Key`, NOT
@@ -151,18 +285,29 @@ class ArtificialAnalysisClient:
             headers["X-Api-Key"] = self._api_key
         return headers
 
-    async def _fetch(self) -> dict[str, Any]:
+    async def _fetch_raw(self) -> bytes:
+        """Return `response.content` — raw bytes for ADR-015
+        byte-identical cache persistence. Shape validation moves
+        out to the caller so a parse failure still leaves the
+        bytes on disk for the investigator."""
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.get(self._base_url, headers=self._headers())
         response.raise_for_status()
+        # Top-level shape check happens before persistence so we
+        # never write garbage. Parse-then-validate could be done
+        # post-persist but AA is small (~430 KB on capture) and the
+        # whole roundtrip is sub-second; checking inline keeps the
+        # error surface simple. The bytes still hit the cache on
+        # success; on failure they don't, but the error message
+        # references the upstream URL for forensic re-fetch.
         payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError(
                 f"AA response top-level must be a JSON object, got {type(payload).__name__}"
             )
-        return payload
+        return response.content
 
-    async def _fetch_with_retry(self) -> dict[str, Any]:
+    async def _fetch_raw_with_retry(self) -> bytes:
         retryer = AsyncRetrying(
             stop=stop_after_attempt(self._retry_attempts),
             wait=wait_exponential(min=self._retry_wait_min_s, max=self._retry_wait_max_s),
@@ -171,7 +316,7 @@ class ArtificialAnalysisClient:
         )
         async for attempt in retryer:
             with attempt:
-                return await self._fetch()
+                return await self._fetch_raw()
         raise AssertionError(  # pragma: no cover
             "AsyncRetrying with reraise=True exhausted without raising"
         )
