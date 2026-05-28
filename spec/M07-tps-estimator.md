@@ -110,6 +110,7 @@ When multiple tiers match, lower number wins. When both Tier 1a and Tier 1b matc
 - [ ] `estimate_tps` is pure (no I/O); property-tested
 - [ ] Reasoning effort dimension respected when AA has the variant rows
 - [ ] Carry-forward from M01 retired: backfill `fp8_tflops_dense` (and `fp4_tflops_dense` where applicable) in `seeds/gpus_supplement.yaml` for the 7 GPUs left null at M01 ship (h100nvl, b100, b200, gb200, gb300, l40, mi300x). See [M01 carry-forward](#m01-carry-forward) below.
+- [ ] Carry-forward from M04 retired: expand `seeds/tracked_models.yaml` from 3 → 30 rows AND keep `seeds/aa_slug_mapping.yaml` in lockstep (each new `cp_slug` MUST have a matching mapping row, empty `aa_slugs: []` is fine for documented absences). Pick a reasoning model with all three AA variants (`-low` / `-medium` / `-high`) to satisfy the "Reasoning effort dimension respected" criterion against live data, not just unit tests. See [M04 carry-forward](#m04-carry-forward) below.
 
 ---
 
@@ -129,6 +130,26 @@ M01 shipped `seeds/gpus_supplement.yaml` with 7 of 12 rows carrying `fp8_tflops_
 | `gb300` | NVIDIA Blackwell Ultra whitepaper (when published) |
 | `l40` | NVIDIA L40 datasheet PDF (not the L40S page) |
 | `mi300x` | AMD Instinct MI300X datasheet PDF |
+
+---
+
+## M04 carry-forward
+
+M04 shipped `seeds/tracked_models.yaml` with 3 of the target 30 rows (llama-3-3-70b, deepseek-v3, mixtral-8x22b — one per family the HF fixtures cover). `seeds/aa_slug_mapping.yaml` carries the matching 3 rows. The 30-row target was always M07's responsibility: M07's Tier-2 routing needs the populated mapping for every model it ranks, and the unit tests for `resolve_aa_slug` use synthetic data because no real reasoning model in the M04-shipped 3 rows has the full effort-variant set.
+
+Before M07 merges:
+
+1. **Expand `seeds/tracked_models.yaml` to ~30 rows.** Add the remaining models from the families we already track (Llama 3.1 variants, Qwen 2.5 / Qwen 3 variants, Mistral / Mixtral other sizes, Phi, Gemma) plus any that landed in CP since the 2026-05-26 capture. Each new row requires:
+   - A captured HF `config.json` fixture under `tests/fixtures/` (offline test policy — adding a row without the fixture breaks `test_first_sync_fetches_from_hf_then_caches`-style coverage).
+   - Verified `total_params_b` / `active_params_b` from the model card or safetensors index.
+
+2. **Keep `seeds/aa_slug_mapping.yaml` in lockstep.** Every new `cp_slug` in `tracked_models.yaml` MUST get a corresponding mapping row. Empty `aa_slugs: []` + `investigation_note` is the documented-absence shape (Llama-3.3-70B-style — though the M04 investigation found that one). The existing `test_every_tracked_model_has_an_aa_mapping_row` regression test enforces this.
+
+3. **Pick a reasoning model with all three AA variants for the end-to-end test.** M04's spec example was `gpt-oss-120b` with `-low` / `-medium` / `-high`, but the 2026-05-27 AA capture has only `gpt-oss-120b-low` + base — no `-medium` / `-high` rows. Real candidates that DO have all three on AA today: `gpt-5-5-low/-medium/-high`, `deepseek-v4-pro-non-reasoning/-high`, `nova-2-0-omni-reasoning-low/-medium`. Pick one, add it to `tracked_models.yaml` + `aa_slug_mapping.yaml`, and use it for the "Reasoning effort dimension respected when AA has the variant rows" acceptance test. The synthetic-data unit tests already pin the `resolve_aa_slug` logic; this is the live-data smoke test on top.
+
+4. **Re-capture the AA fixture if it's stale by the time M07 lands.** `tests/fixtures/aa_models_2026-05-27.json` is timestamped; the AA Intelligence Index ships new `evaluations` keys every few releases. If `test_all_525_rows_in_fixture_project_without_error` (M04) still passes against the fresh capture, the schema is stable enough; otherwise the projection may need new optional fields.
+
+The M04 `AA_ATTRIBUTION_STRING` constant (shipped via PR #8) is the canonical source M07's TrustEnvelope construction MUST import for the `sources[].license_attribution` field on any cost cell derived from AA data — do NOT retype the string.
 
 ---
 

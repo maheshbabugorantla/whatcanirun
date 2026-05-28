@@ -28,10 +28,14 @@
 # the optionality is for the per-user extension file.
 #
 # Spec target: 30 rows. v1 ships with 3 (one per family we have HF
-# fixtures for); the other 27 are tracked as M03 carry-forward debt
-# on spec/M07 until M07 starts needing them. Adding rows here without
-# also capturing the HF config fixture under tests/fixtures/ would
-# break the offline test suite — keep both in sync.
+# fixtures for); the other 27 are tracked as M04 carry-forward debt
+# in spec/M07-tps-estimator.md § M04 carry-forward — M07's Tier-2
+# routing is the consumer that actually needs the full set, so it
+# owns the expansion work alongside picking a reasoning model with
+# all three AA effort variants for the live-data smoke test.
+# Adding rows here without also capturing the HF config fixture
+# under tests/fixtures/ AND adding the matching aa_slug_mapping row
+# would break the offline test suite — keep all three in lockstep.
 ---
 
 # Llama family (standard GQA).

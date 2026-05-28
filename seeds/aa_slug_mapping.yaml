@@ -22,8 +22,12 @@
 # "explicitly empty" — the `investigation_note` exists for auditors.
 #
 # Target: ~30 rows. M04 ships with 3 (matching the 3 rows in
-# seeds/tracked_models.yaml); the rest land as tracked_models.yaml
-# grows in M07.
+# seeds/tracked_models.yaml). The remaining 27 are M04 carry-forward
+# debt explicitly tracked in spec/M07-tps-estimator.md § M04
+# carry-forward — M07's Tier-2 routing is the consumer that needs
+# the populated mapping. The `test_every_tracked_model_has_an_aa_
+# mapping_row` regression test enforces lockstep with
+# tracked_models.yaml going forward.
 
 # Llama 3.3 70B — AA tracks it under the Meta vendor prefix
 # `llama-3-3-instruct-70b`, NOT `llama-3-3-70b`. Spec § Verification
