@@ -198,12 +198,25 @@ async def test_429_is_retried(
 async def test_401_does_not_retry(
     fast_client: ArtificialAnalysisClient,
 ) -> None:
-    """401 = bad key. Retrying just wastes upstream's logs and our
-    quota. Surface immediately so the operator fixes the key."""
+    """401 = bad key. Two contracts apply here:
+
+      1. Retrying 401 just wastes upstream's logs and our quota —
+         `_is_retryable_http_error` returns False so tenacity makes
+         one attempt and stops.
+      2. Per spec/M04 § Acceptance criteria, AA upstream failures
+         (401/429/500) MUST NOT propagate to the parent tool call.
+         Slice H's graceful-fallback wrapping in `get_models` turns
+         the propagated 401 into an empty list + logged warning.
+
+    This test pins BOTH: the call count stays at 1 (no retry) AND
+    the caller sees `[]` rather than a raised HTTPStatusError. The
+    raw-response accessor (`get_raw_response`) does propagate the
+    error — covered in `test_client_fallback.py` if/when M07 needs
+    that distinction."""
     route = respx.get(_AA_URL).mock(return_value=httpx.Response(401, text="bad key"))
 
-    with pytest.raises(httpx.HTTPStatusError):
-        await fast_client.get_models()
+    rows = await fast_client.get_models()
+    assert rows == []
     assert route.call_count == 1
 
 

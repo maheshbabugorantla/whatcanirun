@@ -38,6 +38,7 @@ import contextlib
 import datetime as dt
 import gzip
 import json
+import logging
 import os
 import random
 import secrets
@@ -53,6 +54,8 @@ from tenacity import (
 )
 
 from whatcanirun.pricing.aa_projections import AaModelRow
+
+_log = logging.getLogger(__name__)
 
 AA_MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models"
 DEFAULT_TIMEOUT_S = 30.0
@@ -149,12 +152,45 @@ class ArtificialAnalysisClient:
         """Return the projected list of `AaModelRow`. Raises
         `AaDisabled` when no key is configured.
 
-        Shape failures (missing `data` array, non-list `data`) raise
-        `ValueError` at the boundary so an upstream schema change
-        fails loudly rather than silently producing an empty list
-        that downstream code mistakes for "no models tracked".
+        Per spec/M04 § Acceptance criteria, AA upstream failures
+        MUST NOT propagate to the parent tool call — AA is optional
+        enrichment, and M07's Tier-2 routing treats an empty list
+        as functionally identical to "AA doesn't track this slug".
+        The fallback order on HTTP failure:
+          1. Cache hit within TTL → cached payload (no failure path)
+          2. Stale cache → return stale payload, M09 marks
+             `freshness["artificial_analysis"]` accordingly
+          3. Latest cache missing but snapshot exists → most-recent
+             valid snapshot
+          4. Nothing on disk → return [] and log a warning so the
+             operator can investigate
+
+        Shape failures (missing `data` array, non-list `data`) still
+        raise `ValueError` at the boundary so an upstream schema
+        change surfaces loudly rather than silently producing an
+        empty list that downstream code mistakes for "no models
+        tracked".
         """
-        payload = await self.get_raw_response()
+        try:
+            payload = await self.get_raw_response()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            recovered = self._recover_from_disk()
+            if recovered is not None:
+                _log.warning(
+                    "Artificial Analysis upstream failed (%s); serving stale "
+                    "cache. M09 trust envelope freshness signal reflects this.",
+                    exc,
+                )
+                payload = recovered
+            else:
+                _log.warning(
+                    "Artificial Analysis upstream failed (%s) and no cache "
+                    "exists; returning empty list (AA is optional, parent "
+                    "tool call continues).",
+                    exc,
+                )
+                return []
+
         if "data" not in payload:
             raise ValueError(
                 f"AA response missing required `data` array; got top-level keys {sorted(payload)!r}"
@@ -274,6 +310,36 @@ class ArtificialAnalysisClient:
         parsed: Any = json.loads(payload_bytes)
         assert isinstance(parsed, dict)
         return parsed
+
+    def _recover_from_disk(self) -> dict[str, Any] | None:
+        """Read whatever's on disk — latest cache first, then walk
+        the snapshots dir newest-first looking for a valid one.
+        Returns None when nothing usable exists.
+
+        Stale-tolerant: when the upstream-down fallback fires we
+        don't care about TTL; the existing cache (whatever its age)
+        is the best signal we have, and M09's trust envelope is
+        responsible for surfacing the staleness to the user."""
+        if self._cache_path().exists():
+            try:
+                return self._read_cache()
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                # Corrupt latest cache — fall through to snapshots.
+                pass
+        snapshots_dir = self._snapshots_dir()
+        if not snapshots_dir.exists():
+            return None
+        # Sort lexicographically; ISO-8601 timestamps sort
+        # chronologically by construction.
+        for snap in sorted(snapshots_dir.glob("*.json.gz"), reverse=True):
+            try:
+                with gzip.open(snap, "rb") as f:
+                    decoded: Any = json.loads(f.read())
+            except (OSError, json.JSONDecodeError, gzip.BadGzipFile):
+                continue
+            if isinstance(decoded, dict):
+                return decoded
+        return None
 
     # ---------------------------------------------------------------- HTTP layer
 
