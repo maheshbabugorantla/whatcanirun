@@ -1,36 +1,56 @@
 # Artificial Analysis slug mapping — curated, NEVER fuzzy.
 # Spec: spec/M04-aa-optional-client.md
+# Loader: src/whatcanirun/catalog/loaders.py::load_aa_slug_mapping
 #
-# WHY curated: live verification shows substring matching maps
-# `llama-3-1-405b` to `hermes-4-llama-3-1-405b` (a Nous fine-tune, NOT vanilla Llama).
-# Every mapping must be explicit.
+# WHY curated: live verification (2026-05-27) shows substring matching
+# `llama-3-1-405b` would map to `hermes-4-llama-3-1-405b` — a Nous
+# Research fine-tune that is NOT vanilla Llama. Every CP slug → AA slug
+# pairing must be explicit, with `reasoning_effort` pinned to the right
+# variant for models that ship multiple effort levels.
 #
-# Schema:
-#   cp_slug              (str)            ComputePrices slug (our canonical)
+# Schema (AaSlugMappingRow in src/whatcanirun/pricing/aa_slug_mapping.py):
+#   cp_slug              (str, required)  ComputePrices slug (our canonical)
 #   aa_slugs             (list)           Zero or more AA slug variants
-#     - aa_slug          (str)            The AA slug as it appears in the response
-#       reasoning_effort (enum|null)      low | medium | high | null (non-reasoning model)
-#   investigation_note   (str, optional)  For documented mysteries (e.g. Llama-3.3-70B absence)
+#     - aa_slug          (str, required)  The slug as it appears in AA's response
+#       reasoning_effort (enum|null)      low | medium | high | null (non-reasoning)
+#   investigation_note   (str, optional)  Free-form context — used for documented
+#                                         absences and AA-specific quirks
 #
-# Target: ~30 rows. M04 fills these in by grepping a live AA response.
+# Empty `aa_slugs` is legitimate: it documents that AA doesn't track
+# this model under any known slug today. M07's Tier-2 routing reads
+# `resolve_aa_slug() is None` for both "absent from this mapping" and
+# "explicitly empty" — the `investigation_note` exists for auditors.
+#
+# Target: ~30 rows. M04 ships with 3 (matching the 3 rows in
+# seeds/tracked_models.yaml); the rest land as tracked_models.yaml
+# grows in M07.
 
-# Example reasoning model with three effort levels:
-# - cp_slug: gpt-oss-120b
-#   aa_slugs:
-#     - aa_slug: gpt-oss-120b-low
-#       reasoning_effort: low
-#     - aa_slug: gpt-oss-120b-medium
-#       reasoning_effort: medium
-#     - aa_slug: gpt-oss-120b-high
-#       reasoning_effort: high
-#
-# Example non-reasoning model:
-# - cp_slug: deepseek-v3
-#   aa_slugs:
-#     - aa_slug: deepseek-v3
-#       reasoning_effort: null
-#
-# Example explicit miss with investigation note:
-# - cp_slug: llama-3-3-70b
-#   aa_slugs: []
-#   investigation_note: "Live verification (25 May 2026): no match across 524 rows. Investigate during M04."
+# Llama 3.3 70B — AA tracks it under the Meta vendor prefix
+# `llama-3-3-instruct-70b`, NOT `llama-3-3-70b`. Spec § Verification
+# status flagged this as a documented absence based on a stale check
+# done before M04 started; live verification on 2026-05-27 with a
+# real key found the row under the suffixed slug. The mapping below
+# reflects current reality.
+- cp_slug: llama-3-3-70b
+  aa_slugs:
+    - aa_slug: llama-3-3-instruct-70b
+      reasoning_effort: null
+  investigation_note: "Spec § Verification status flagged as absent based on a 25 May 2026 check that searched for `llama-3-3-70b`. Live re-verification 2026-05-27 (525-row response) found the model under the Meta-prefixed slug `llama-3-3-instruct-70b`. Mapping updated to current reality; spec note kept for historical context."
+
+# DeepSeek-V3 — direct slug match. AA carries observed throughput
+# data but the 2026-05-27 capture reports `median_output_tokens_per_second=0`
+# (likely an AA-side bookkeeping issue, not our problem). M07 will
+# get a usable number once AA refreshes its sample.
+- cp_slug: deepseek-v3
+  aa_slugs:
+    - aa_slug: deepseek-v3
+      reasoning_effort: null
+
+# Mixtral 8x22B — AA spells this `mistral-8x22b-instruct` (note:
+# "mistral", not "mixtral" — Mistral the company uses the unified
+# `mistral-*` prefix in AA's response for both dense and MoE models).
+# Same `median_output_tokens_per_second=0` situation as DeepSeek-V3.
+- cp_slug: mixtral-8x22b
+  aa_slugs:
+    - aa_slug: mistral-8x22b-instruct
+      reasoning_effort: null

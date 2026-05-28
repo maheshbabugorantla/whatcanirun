@@ -18,6 +18,7 @@ from whatcanirun.catalog.seed_schemas import (
     Quantization,
     TrackedModelRow,
 )
+from whatcanirun.pricing.artificial_analysis import AaSlugMappingRow
 
 
 class SeedLoadError(Exception):
@@ -67,6 +68,28 @@ def load_gpu_supplements(path: Path) -> list[GpuSupplement]:
 def load_quantizations(path: Path) -> list[Quantization]:
     """Load `seeds/quantizations.yaml` into validated `Quantization` rows."""
     return _load_rows(path, Quantization)
+
+
+def load_aa_slug_mapping(path: Path) -> list[AaSlugMappingRow]:
+    """Load `seeds/aa_slug_mapping.yaml` into validated
+    `AaSlugMappingRow` rows.
+
+    Duplicate `cp_slug` values are rejected — two rows sharing a
+    `cp_slug` would silently shadow each other in any dict-keyed
+    lookup, defeating the curated-mapping guarantee. Same
+    duplicate-detection pattern as `load_tracked_models`.
+    """
+    rows = _load_rows(path, AaSlugMappingRow)
+    seen: dict[str, int] = {}
+    for idx, row in enumerate(rows, start=1):
+        if row.cp_slug in seen:
+            raise SeedLoadError(
+                f"{path}: duplicate cp_slug {row.cp_slug!r} appears at rows "
+                f"#{seen[row.cp_slug]} and #{idx}; each cp_slug must appear at "
+                f"most once per file"
+            )
+        seen[row.cp_slug] = idx
+    return rows
 
 
 def load_tracked_models(path: Path) -> list[TrackedModelRow]:
