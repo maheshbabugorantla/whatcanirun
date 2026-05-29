@@ -105,3 +105,29 @@ def test_known_cp_slugs_resolve_to_their_documented_aa_slugs(
 
     mapping = load_aa_slug_mapping(_SEEDS / "aa_slug_mapping.yaml")
     assert resolve_aa_slug(mapping, cp_slug, None) == expected_aa_slug
+
+
+def test_gpt_oss_120b_resolves_distinct_aa_slugs_per_effort() -> None:
+    """M07 spec § M04 carry-forward acceptance criterion: 'Pick a
+    reasoning model with all three AA variants (or as many as AA
+    tracks today) and use it for the live-data smoke test'.
+
+    AA's 2026-05-27 capture tracks gpt-oss-120b at two effort
+    levels: base (reasoning_effort=None) and -low (reasoning_effort
+    ="low"). -medium and -high aren't in AA today; the synthetic-
+    data unit tests in test_slug_mapping.py pin those branches
+    against fake AA rows. This test pins the live-data variant
+    discrimination — querying with reasoning_effort=None returns
+    the base AA slug; reasoning_effort='low' returns the -low
+    variant. A drive-by edit that flips them or merges them
+    silently fails this.
+    """
+    from whatcanirun.pricing.artificial_analysis import resolve_aa_slug
+
+    mapping = load_aa_slug_mapping(_SEEDS / "aa_slug_mapping.yaml")
+    assert resolve_aa_slug(mapping, "gpt-oss-120b", None) == "gpt-oss-120b"
+    assert resolve_aa_slug(mapping, "gpt-oss-120b", "low") == "gpt-oss-120b-low"
+    # -medium and -high not registered → None (M07 falls through
+    # to Tier 3/4 for those efforts on this model).
+    assert resolve_aa_slug(mapping, "gpt-oss-120b", "medium") is None
+    assert resolve_aa_slug(mapping, "gpt-oss-120b", "high") is None

@@ -60,3 +60,84 @@
   total_params_b: 141.0
   active_params_b: 39.0
   notes: "8 experts per layer, 2 active per token."
+- slug: qwen-2-5-7b
+  hf_repo_id: Qwen/Qwen2.5-7B-Instruct
+  display_name: "Qwen2.5 7B Instruct"
+  total_params_b: 7.62
+  notes: "AA does not track Qwen 2.5-7B at this slug."
+
+- slug: qwen-2-5-14b
+  hf_repo_id: Qwen/Qwen2.5-14B-Instruct
+  display_name: "Qwen2.5 14B Instruct"
+  total_params_b: 14.77
+  notes: "AA does not track Qwen 2.5-14B at this slug."
+
+- slug: qwen-2-5-72b
+  hf_repo_id: Qwen/Qwen2.5-72B-Instruct
+  display_name: "Qwen2.5 72B Instruct"
+  total_params_b: 72.7
+  notes: "AA tracks under a provider-specific slug; left unmapped."
+
+- slug: qwen-2-5-coder-32b
+  hf_repo_id: Qwen/Qwen2.5-Coder-32B-Instruct
+  display_name: "Qwen2.5 Coder 32B Instruct"
+  total_params_b: 32.0
+
+- slug: mistral-7b
+  hf_repo_id: mistralai/Mistral-7B-Instruct-v0.3
+  display_name: "Mistral 7B Instruct v0.3"
+  total_params_b: 7.25
+
+- slug: mistral-nemo
+  hf_repo_id: mistralai/Mistral-Nemo-Instruct-2407
+  display_name: "Mistral Nemo Instruct (2407)"
+  total_params_b: 12.2
+
+- slug: mistral-large
+  hf_repo_id: mistralai/Mistral-Large-Instruct-2411
+  display_name: "Mistral Large Instruct (2411)"
+  total_params_b: 123.0
+
+- slug: mistral-small
+  hf_repo_id: mistralai/Mistral-Small-Instruct-2409
+  display_name: "Mistral Small Instruct (2409)"
+  total_params_b: 22.2
+
+- slug: mixtral-8x7b
+  hf_repo_id: mistralai/Mixtral-8x7B-Instruct-v0.1
+  display_name: "Mixtral 8x7B Instruct v0.1"
+  total_params_b: 46.7
+  active_params_b: 12.9
+
+- slug: phi-4
+  hf_repo_id: microsoft/phi-4
+  display_name: "Phi-4"
+  total_params_b: 14.7
+
+- slug: deepseek-r1
+  hf_repo_id: deepseek-ai/DeepSeek-R1
+  display_name: "DeepSeek R1"
+  total_params_b: 671.0
+  active_params_b: 37.0
+  notes: "DeepSeek R1 is the reasoning sibling of V3; MoE 671B total / 37B active. MLA attention."
+
+- slug: deepseek-v3-1
+  hf_repo_id: deepseek-ai/DeepSeek-V3.1
+  display_name: "DeepSeek V3.1"
+  total_params_b: 671.0
+  active_params_b: 37.0
+  notes: "Updated DeepSeek-V3 architecture; same MoE / MLA shape."
+
+- slug: gpt-oss-20b
+  hf_repo_id: openai/gpt-oss-20b
+  display_name: "GPT-OSS 20B"
+  total_params_b: 20.9
+  active_params_b: 3.6
+  notes: "AA tracks both base (non-reasoning) and low-effort reasoning rows."
+
+- slug: gpt-oss-120b
+  hf_repo_id: openai/gpt-oss-120b
+  display_name: "GPT-OSS 120B"
+  total_params_b: 116.8
+  active_params_b: 5.13
+  notes: "Live-data smoke test target for M07 reasoning-effort dimension acceptance — AA tracks base + low-effort variant; -medium/-high don't exist in 2026-05-27 capture so the synthetic-data unit tests pin those branches and this row pins the (None vs low) live-data discrimination."
