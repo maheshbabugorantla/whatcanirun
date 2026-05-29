@@ -30,17 +30,23 @@ from pathlib import Path
 import whatcanirun.plan.cost_cells as cost_cells_module
 
 # Tool-call path functions — must NOT contain SQL or DuckDB.
+# Must cover every helper reachable from `query_cost_cells`'s call
+# graph; a future SQL leak into one of these is what the test is
+# trying to catch.
 _TOOL_PATH_FUNCTIONS = {
     "query_cost_cells",
     "_self_hosted_cost",
     "_partial_envelope_for_gpu_rental",
     "_partial_envelope_for_hosted_api",
+    "_freshness_from_sources",
+    "_find_matched_bench_cell",
 }
 
 # Resource-path functions — ALLOWED to import duckdb / use SQL.
 _RESOURCE_PATH_FUNCTIONS = {
     "render_cost_cells_resource",
     "_empty_table",
+    "_resource_schema",
 }
 
 

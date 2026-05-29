@@ -608,10 +608,12 @@ def render_cost_cells_resource(
     )
 
     # Project each cell to a flat dict suitable for tabular
-    # storage. trust_envelope is structured metadata — flatten
-    # the load-bearing fields (confidence, top sources) but skip
-    # the full envelope tree to keep the parquet readable in
-    # downstream tools that don't speak nested JSON.
+    # storage. trust_envelope is structured metadata; only the
+    # rolled-up `confidence` (as `trust_confidence`) round-trips
+    # here. The full envelope tree (sources, freshness, caveats,
+    # verify_links) stays accessible via `query_cost_cells` for
+    # callers that need it — the parquet resource is a flat
+    # analytics view, not a provenance dump.
     rows: list[dict[str, Any]] = []
     for c in cells:
         rows.append(
