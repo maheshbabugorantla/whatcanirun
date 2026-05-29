@@ -176,14 +176,26 @@ def query_cost_cells(
                     continue
 
                 for quant in quants_to_consider:
-                    fit = compute_fit(
-                        model=model,
-                        gpu=gpu,
-                        quant=quant,
-                        tp_size=1,  # v1: single-GPU; tp>1 is M09+
-                        batch_size=filters.batch_size,
-                        context_length=filters.context_length,
-                    )
+                    try:
+                        fit = compute_fit(
+                            model=model,
+                            gpu=gpu,
+                            quant=quant,
+                            tp_size=1,  # v1: single-GPU; tp>1 is M09+
+                            batch_size=filters.batch_size,
+                            context_length=filters.context_length,
+                        )
+                    except NotImplementedError:
+                        # M06 raises for kv_cache_strategy='sliding_window'
+                        # (deferred until sliding_window_size plumbing
+                        # lands). Skip this combination rather than
+                        # aborting the whole query — other (gpu, model,
+                        # quant) combos in this batch are still useful.
+                        # The unsupported combo simply doesn't appear in
+                        # the cost cells; M09's missing-cell handling
+                        # surfaces this honestly to the user when they
+                        # query a sliding-window model.
+                        continue
                     if filters.only_fits and not fit.fits:
                         continue
 
@@ -235,7 +247,7 @@ def query_cost_cells(
                             tps_estimate=tps,
                             fit_result=fit,
                             cost_per_m_output_usd_self_hosted=cost_per_m,
-                            trust_envelope=_partial_envelope_for_gpu_rental(price, tps),
+                            trust_envelope=_partial_envelope_for_gpu_rental(price, tps, model),
                         )
                     )
 
@@ -312,12 +324,14 @@ def _self_hosted_cost(
 def _partial_envelope_for_gpu_rental(
     price: GpuPriceRow,
     tps: TpsEstimate,
+    model: Model,
 ) -> TrustEnvelope:
     """M08 builds the per-cell envelope with the data it has
     direct access to: pricing source + freshness, throughput
-    confidence from M07's TpsEstimate. M09 ENRICHES this at MCP-
-    wrap time with workload_assumption (when synthesizing counts),
-    full caveats list, etc.
+    confidence from M07's TpsEstimate, model-architecture source
+    from M03's HF sync. M09 ENRICHES this at MCP-wrap time with
+    workload_assumption (when synthesizing counts), full caveats
+    list, etc.
 
     Trust contract: every contributing source MUST be named in
     the envelope's sources list. A confidence_breakdown value
@@ -328,7 +342,10 @@ def _partial_envelope_for_gpu_rental(
     CP's specs.memory_bandwidth_gbps which we already cite, the
     heuristic IS a distinct provenance worth naming so M09 can
     surface "single-stream calibration 0.75, ±50% accuracy" in
-    the caveats list.
+    the caveats list. And `confidence_breakdown['model_architecture']`
+    is anchored on HF data via compute_fit (n_layers, n_kv_heads,
+    head_dim, raw_config) — so `huggingface` MUST appear in
+    sources + freshness with the M03 sync timestamp.
 
     `tps.source_url` (populated for Tier 1a/1b anchors) is
     threaded into verify_links so the LLM client can link the
@@ -339,7 +356,12 @@ def _partial_envelope_for_gpu_rental(
             name="computeprices",
             detail=f"GET /api/v1/gpu-prices, {price.provider_slug}/{price.gpu_slug}",
             last_updated=price.last_updated,
-        )
+        ),
+        Source(
+            name="huggingface",
+            detail=f"config.json + family detection for {model.hf_repo_id}",
+            last_updated=model.last_synced_at,
+        ),
     ]
     verify_links = [price.source_url]
 
@@ -411,7 +433,10 @@ def _partial_envelope_for_gpu_rental(
             "gpu_specs": 0.85,
             "freshness": 0.8,
         },
-        freshness={"computeprices": price.last_updated},
+        freshness={
+            "computeprices": price.last_updated,
+            "huggingface": model.last_synced_at,
+        },
         verify_links=verify_links,
     )
 

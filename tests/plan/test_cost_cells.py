@@ -162,14 +162,18 @@ def _minimal_tps() -> TpsEstimate:
 
 
 def _minimal_fit() -> FitResult:
+    """Self-consistent fixture: a 7B model on H100 80GB.
+    weight=7, overhead=2.1, kv=0.67, total=9.77, available=80,
+    headroom=70.23, fits=True. Internally consistent so it can be
+    reused in behavioral tests without surprising readers."""
     return FitResult(
         fits=True,
-        weight_gb=70.6,
-        kv_cache_gb=1.0,
-        framework_overhead_gb=10.6,
-        total_required_gb=82.2,
+        weight_gb=7.0,
+        kv_cache_gb=0.67,
+        framework_overhead_gb=2.1,
+        total_required_gb=9.77,
         available_gb=80.0,
-        headroom_gb=-2.2,
+        headroom_gb=70.23,
         blocking_reasons=[],
         assumptions={
             "kv_bytes": 1.0,
@@ -539,6 +543,69 @@ def test_render_resource_returns_readable_parquet_bytes() -> None:
 
 
 # ============================================================ Properties
+
+
+def test_sliding_window_model_skipped_not_crashes_whole_query() -> None:
+    """Copilot review (round 1): compute_fit() raises
+    NotImplementedError when model.kv_cache_strategy='sliding_window'
+    (M06 deferred sliding_window_size plumbing). Without a try/
+    except, a single sliding-window model in the catalog aborts
+    the WHOLE query_cost_cells call — every other (gpu, model,
+    quant) combo is lost.
+
+    Pin the behavior: the unsupported combination is silently
+    skipped; supported combinations still emerge."""
+    sliding_model = _model(slug="mistral-sliding")
+    sliding_model_dict = sliding_model.model_dump()
+    sliding_model_dict["kv_cache_strategy"] = "sliding_window"
+    sliding = Model.model_validate(sliding_model_dict)
+
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[],
+        gpu_catalog=[_gpu()],
+        model_catalog=[sliding, _model()],  # one bad + one good
+        quantizations=[_quant()],
+        bench_cells=[_anchor()],
+        aa_observations=None,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    # The good model survives.
+    assert any(c.model_slug == "llama-3-3-70b" for c in cells)
+    # The sliding-window model produces NO cell (skipped).
+    assert not any(c.model_slug == "mistral-sliding" for c in cells)
+
+
+def test_envelope_cites_huggingface_when_fit_check_used_model_data() -> None:
+    """Copilot review (round 1): TrustEnvelope claims confidence
+    for `fit_check`, `model_architecture`, `gpu_specs`, but the
+    sources list only included `computeprices`. Since
+    compute_fit consumes HF-synced Model fields (n_layers,
+    n_kv_heads, head_dim, total_params_b, kv_cache_strategy from
+    raw_config), the envelope MUST cite `huggingface` as a
+    contributing upstream so the LLM client can disclose where
+    the architecture data came from.
+
+    M03 ships `Model.last_synced_at`; that's the freshness
+    signal we surface."""
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[_anchor()],
+        aa_observations=None,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
+    hf_sources = [s for s in h100.trust_envelope.sources if s.name == "huggingface"]
+    assert hf_sources, (
+        "gpu_rental cell missing huggingface Source entry; "
+        "confidence_breakdown['model_architecture'] cites HF data"
+    )
+    # Freshness map names the HF sync timestamp.
+    assert "huggingface" in h100.trust_envelope.freshness
 
 
 def test_envelope_lists_source_matching_tps_provenance_aa() -> None:
