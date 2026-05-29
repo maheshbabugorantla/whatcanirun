@@ -101,6 +101,20 @@ def test_resource_path_is_still_present() -> None:
     )
 
 
+def test_render_cost_cells_resource_closes_duckdb_connection() -> None:
+    """Copilot review (round 4): `duckdb.connect(":memory:")`
+    without explicit cleanup leaks native resources across
+    repeated resource renders in a long-running MCP server. The
+    fix is the `with` context manager so the handle closes even
+    if the pyarrow write raises."""
+    src = _source_of("render_cost_cells_resource")
+    assert "with duckdb.connect" in src, (
+        "render_cost_cells_resource opens a DuckDB connection without "
+        "deterministic cleanup — use `with duckdb.connect(...) as con:` "
+        "so the native handle is closed even if pyarrow raises"
+    )
+
+
 def test_module_level_imports_dont_leak_duckdb() -> None:
     """`import duckdb` at module level would make DuckDB available
     to every function, including the tool-call path. The split

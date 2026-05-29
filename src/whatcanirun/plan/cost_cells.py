@@ -645,11 +645,16 @@ def render_cost_cells_resource(
     # `_empty_table` so the resource format is the same across
     # renders.
     table = pa.Table.from_pylist(rows, schema=_resource_schema()) if rows else _empty_table()
-    con = duckdb.connect(":memory:")
-    con.register("cells", table)
-    # `.sql(...).arrow()` returns a RecordBatchReader; tabularize
-    # via to_arrow_table for the parquet write path.
-    arrow_table = con.sql("SELECT * FROM cells").to_arrow_table()
+    # `with` ensures the native DuckDB handle is released even if
+    # pyarrow raises mid-write — leaving the connection open in a
+    # long-running MCP server accumulates state across repeated
+    # `cost-cells://current` reads.
+    with duckdb.connect(":memory:") as con:
+        con.register("cells", table)
+        # `.sql(...).arrow()` returns a RecordBatchReader; tabularize
+        # via to_arrow_table for the parquet write path.
+        arrow_table = con.sql("SELECT * FROM cells").to_arrow_table()
+
     import pyarrow.parquet as pq
 
     buf = io.BytesIO()
