@@ -15,7 +15,7 @@ Critical path = 8 weekends at ~6h each (~54h implementation-only). Plan for **75
 | M02 | [ComputePrices client](M02-computeprices-client.md) | 4h | ✓ | ✓ |
 | M03 | [Hugging Face model sync](M03-hf-model-sync.md) | 4h | ✓ | ✓ |
 | M04 | [Artificial Analysis optional client](M04-aa-optional-client.md) | 4h | parallel | ✓ |
-| M05 | [Workload profile seeds](M05-workload-profiles.md) | 1h | parallel | ⬜ |
+| M05 | [Workload profile seeds](M05-workload-profiles.md) | 1h | parallel | ✓ |
 | M06 | [fit_check](M06-fit-check.md) | 4h | ✓ | ⬜ |
 | M07 | [tps_estimator](M07-tps-estimator.md) | 4h | ✓ | ⬜ |
 | M08 | [Cost cells join layer](M08-cost-cells.md) | 3h | ✓ | ⬜ |
