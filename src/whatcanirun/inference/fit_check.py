@@ -191,7 +191,21 @@ def _kv_cache_gb(
         # latent + a small rope projection. Dramatically smaller
         # than the equivalent standard_gqa for the same n_kv_heads
         # (the M03 fixture has n_kv_heads=128, but only the
-        # latent + rope dims are actually cached).
+        # latent + rope dims are actually cached). Validate the
+        # required raw_config keys upfront — direct `raw_config[
+        # "kv_lora_rank"]` would raise bare KeyError, which
+        # `sync_all_tracked`-style batch consumers and M07/M09's
+        # MCP layer don't catch; converting to ValueError naming
+        # the slug + missing fields gives MCP callers a useful
+        # diagnostic instead of an opaque traceback.
+        missing = [k for k in ("kv_lora_rank", "qk_rope_head_dim") if k not in model.raw_config]
+        if missing:
+            raise ValueError(
+                f"model {model.slug!r} has kv_cache_strategy='mla' but "
+                f"raw_config is missing required key(s) {missing!r}. "
+                "MLA models need both kv_lora_rank and qk_rope_head_dim "
+                "from HF config.json — confirm the M03 sync captured them."
+            )
         kv_lora_rank = int(model.raw_config["kv_lora_rank"])
         qk_rope_head_dim = int(model.raw_config["qk_rope_head_dim"])
         return (
@@ -202,10 +216,27 @@ def _kv_cache_gb(
             * kv_bytes
         ) / 1e9
 
+    if model.kv_cache_strategy == "sliding_window":
+        # `KvCacheStrategy` advertises this value but `Model`
+        # doesn't carry a typed `sliding_window_size` field yet
+        # (it lives in `raw_config["sliding_window"]` for the
+        # Mistral variants that use it). Spec § Formulas wants
+        # `effective_ctx = min(ctx, model.sliding_window_size)`
+        # clamping; without the field plumbed, fall-through to
+        # standard_gqa would silently over-estimate KV cache and
+        # produce wrong `fits` verdicts. Raise loudly until M07
+        # (or a follow-up) plumbs the missing field, so the
+        # failure mode is "unsupported model" rather than
+        # "wrong-answer budget_to_plan".
+        raise NotImplementedError(
+            f"model {model.slug!r} has kv_cache_strategy='sliding_window' "
+            "but compute_fit doesn't yet plumb `sliding_window_size` from "
+            "HF config.json into the Model projection. Tracked for follow-up; "
+            "until then this combination is unsupported."
+        )
+
     # standard_gqa: 2 * layers * kv_heads * head_dim * ctx * batch * kv_bytes
-    # The leading 2 is K + V tensors. Same formula applies for
-    # sliding_window once we clamp ctx; spec § Formulas left
-    # sliding window as a TODO for M07's actual Mistral support.
+    # The leading 2 is K + V tensors.
     return (
         2
         * model.n_layers

@@ -590,6 +590,87 @@ def test_tp_size_zero_or_negative_rejected(bad_value: int) -> None:
         compute_fit(**args)
 
 
+def test_mla_model_missing_kv_lora_rank_raises_value_error() -> None:
+    """Copilot review feedback: MLA branch direct-indexes
+    `raw_config["kv_lora_rank"]` / `["qk_rope_head_dim"]`. Missing
+    keys must raise `ValueError` (with the slug + missing keys
+    named), NOT a bare `KeyError` — same M03 round-2 lesson:
+    `sync_all_tracked`-style batch consumers and the M07/M09 MCP
+    layer catch `(ValueError, ValidationError)` for soft per-row
+    skip + diagnostic, but a bare `KeyError` propagates as an
+    opaque traceback to the MCP caller."""
+    broken_mla = _model(
+        slug="broken-mla",
+        total_params_b=671.0,
+        n_layers=61,
+        kv_cache_strategy="mla",
+        raw_config={"qk_rope_head_dim": 64},  # kv_lora_rank missing
+    )
+    with pytest.raises(ValueError, match="kv_lora_rank"):
+        compute_fit(
+            model=broken_mla,
+            gpu=_gpu("h100x8", 640),
+            quant=_fp8(),
+            tp_size=1,
+            batch_size=1,
+            context_length=4096,
+        )
+
+
+def test_mla_model_missing_qk_rope_head_dim_raises_value_error() -> None:
+    """Symmetric: both MLA keys must be present, both produce a
+    ValueError naming the missing field when absent."""
+    broken_mla = _model(
+        slug="broken-mla-2",
+        total_params_b=671.0,
+        n_layers=61,
+        kv_cache_strategy="mla",
+        raw_config={"kv_lora_rank": 512},  # qk_rope_head_dim missing
+    )
+    with pytest.raises(ValueError, match="qk_rope_head_dim"):
+        compute_fit(
+            model=broken_mla,
+            gpu=_gpu("h100x8", 640),
+            quant=_fp8(),
+            tp_size=1,
+            batch_size=1,
+            context_length=4096,
+        )
+
+
+def test_sliding_window_strategy_raises_not_implemented_loudly() -> None:
+    """Copilot review feedback: `KvCacheStrategy` Literal advertises
+    `"sliding_window"` but `Model` doesn't yet carry a
+    `sliding_window_size` field (it's only in raw_config for the
+    Mistral variants that use it). Spec § Formulas wants
+    `effective_ctx = min(ctx, model.sliding_window_size)` clamping,
+    which we can't do without the field plumbed.
+
+    Until M07 (or whoever consumes sliding-window models) adds the
+    plumbing, fall-through to standard_gqa would silently
+    over-estimate KV cache and produce wrong `fits` verdicts.
+    Raise `NotImplementedError` LOUDLY so the failure mode is
+    'mistral-with-sliding-window is unsupported' rather than
+    'budget_to_plan gave the wrong answer'.
+
+    PR title updated accordingly — M06 ships MLA + MoE branches
+    only; sliding-window is deferred."""
+    sliding_model = _model(
+        slug="some-sliding-model",
+        total_params_b=7.0,
+        kv_cache_strategy="sliding_window",
+    )
+    with pytest.raises(NotImplementedError, match="sliding_window"):
+        compute_fit(
+            model=sliding_model,
+            gpu=_l40s(),
+            quant=_fp16(),
+            tp_size=1,
+            batch_size=1,
+            context_length=4096,
+        )
+
+
 def test_model_with_none_total_params_rejected() -> None:
     """ADR-010: null total_params should be routed to
     requires_measurement by M07 BEFORE reaching fit_check. If a
