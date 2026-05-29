@@ -1,33 +1,44 @@
-# Workload profiles — used by budget_to_plan to convert $ into prompt counts.
+# Workload profiles — used by M09's `budget_to_plan` tool to convert
+# dollar budgets into prompt counts via the per-prompt cost computed
+# from (avg_input_tokens, avg_output_tokens) and the cost cell's
+# `cost_per_m_output_usd`.
+#
 # Spec: spec/M05-workload-profiles.md
+# Loader: src/whatcanirun/catalog/loaders.py::load_workload_profiles
 #
-# Schema:
-#   slug                  (str)
-#   display_name          (str)
-#   avg_input_tokens      (int, >0)
-#   avg_output_tokens     (int, >0)
-#   is_default            (bool)  Exactly one row must be true
-#   description           (str)
+# Schema (WorkloadProfile in src/whatcanirun/catalog/workload.py):
+#   slug                  (str, required)   Stable identifier; M09 takes this as the
+#                                           workload_profile arg
+#   display_name          (str, required)   Human-readable name for tool output
+#   avg_input_tokens      (int, required, >0)
+#   avg_output_tokens     (int, required, >0)
+#   is_default            (bool, required)  Exactly one row across the file must be true.
+#                                           Loader rejects zero or two-or-more defaults
+#                                           at load time.
+#   description           (str, required)   Free-form context shown to the user when
+#                                           the assumption is surfaced in the trust envelope
 #
-# Target: 3 rows. M05 fills these in.
+# Target: 3 rows. v1 keeps the option surface narrow — more profiles
+# ship only if usage data shows we need them. See spec/INDEX.md v2
+# trigger conditions.
 
-# - slug: code_completion
-#   display_name: "Code completion (Copilot-style)"
-#   avg_input_tokens: 800
-#   avg_output_tokens: 120
-#   is_default: false
-#   description: "Editor-integrated completion. Heavy on context, light on output."
-#
-# - slug: chat_assistant
-#   display_name: "Chat assistant (general Q&A)"
-#   avg_input_tokens: 400
-#   avg_output_tokens: 250
-#   is_default: true
-#   description: "Conversational use. Balanced input/output. Used when caller does not specify."
-#
-# - slug: batch_eval
-#   display_name: "Batch evaluation"
-#   avg_input_tokens: 1200
-#   avg_output_tokens: 200
-#   is_default: false
-#   description: "Eval suites, classification pipelines, retrieval grading."
+- slug: code_completion
+  display_name: "Code completion (Copilot-style)"
+  avg_input_tokens: 800
+  avg_output_tokens: 120
+  is_default: false
+  description: "Editor-integrated completion. Heavy on context (the surrounding code), light on output (one completion suggestion)."
+
+- slug: chat_assistant
+  display_name: "Chat assistant (general Q&A)"
+  avg_input_tokens: 400
+  avg_output_tokens: 250
+  is_default: true
+  description: "Conversational use. Balanced input/output. Used as the default when the caller doesn't specify a workload_profile."
+
+- slug: batch_eval
+  display_name: "Batch evaluation"
+  avg_input_tokens: 1200
+  avg_output_tokens: 200
+  is_default: false
+  description: "Eval suites, classification pipelines, retrieval grading. Long input context, short structured output."

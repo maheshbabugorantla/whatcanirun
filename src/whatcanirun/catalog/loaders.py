@@ -18,6 +18,7 @@ from whatcanirun.catalog.seed_schemas import (
     Quantization,
     TrackedModelRow,
 )
+from whatcanirun.catalog.workload import WorkloadProfile
 from whatcanirun.pricing.artificial_analysis import AaSlugMappingRow
 
 
@@ -68,6 +69,29 @@ def load_gpu_supplements(path: Path) -> list[GpuSupplement]:
 def load_quantizations(path: Path) -> list[Quantization]:
     """Load `seeds/quantizations.yaml` into validated `Quantization` rows."""
     return _load_rows(path, Quantization)
+
+
+def load_workload_profiles(path: Path) -> list[WorkloadProfile]:
+    """Load `seeds/workload_profiles.yaml` into validated
+    `WorkloadProfile` rows.
+
+    Enforces the cross-row "exactly one `is_default=True`"
+    invariant — Pydantic can't see it because the rule spans the
+    list and each `WorkloadProfile` only knows its own bool. With
+    zero defaults, M09's `budget_to_plan` has no sensible fallback
+    when the caller omits `workload_profile`; with two, the second
+    silently shadows the first in any "find the default" lookup.
+    Both modes fail loudly with the offending slugs named so the
+    operator can diff them in their editor.
+    """
+    rows = _load_rows(path, WorkloadProfile)
+    defaults = [row.slug for row in rows if row.is_default]
+    if len(defaults) != 1:
+        raise SeedLoadError(
+            f"{path}: exactly one row must have `is_default: true`; "
+            f"got {len(defaults)} default(s) (slugs: {defaults!r})"
+        )
+    return rows
 
 
 def load_aa_slug_mapping(path: Path) -> list[AaSlugMappingRow]:
