@@ -227,13 +227,22 @@ class Model(BaseModel):
         # skipped per spec/M03 § Failure modes. Listing the keys here
         # also gives the caller a clearer error than a stray KeyError
         # mid-projection.
+        # `torch_dtype` intentionally excluded — natively-quantized
+        # models (gpt-oss MXFP4, future INT4 releases) ship configs
+        # WITHOUT torch_dtype because the weight dtype is governed
+        # by `quantization_config.quant_method`. M03 originally
+        # required torch_dtype; M07's tracked_models expansion
+        # added gpt-oss and surfaced the gap. native_dtype now
+        # falls back through a chain (see below) and ultimately
+        # records "unknown" rather than refusing the row. Math
+        # consumers don't read native_dtype — quant.bits_per_weight
+        # is the load-bearing field; native_dtype is metadata.
         _required_keys = (
             "num_hidden_layers",
             "num_attention_heads",
             "num_key_value_heads",
             "hidden_size",
             "max_position_embeddings",
-            "torch_dtype",
         )
         missing = [key for key in _required_keys if key not in raw_config]
         if missing:
@@ -244,6 +253,8 @@ class Model(BaseModel):
         n_attention_heads = int(raw_config["num_attention_heads"])
         hidden_size = int(raw_config["hidden_size"])
         head_dim = int(raw_config.get("head_dim") or (hidden_size // n_attention_heads))
+
+        native_dtype = _native_dtype_from_raw_config(raw_config)
 
         return cls(
             slug=slug,
@@ -257,7 +268,7 @@ class Model(BaseModel):
             head_dim=head_dim,
             hidden_size=hidden_size,
             max_position_embeddings=int(raw_config["max_position_embeddings"]),
-            native_dtype=str(raw_config["torch_dtype"]),
+            native_dtype=native_dtype,
             architecture_family=architecture_family,
             kv_cache_strategy=kv_cache_strategy,
             raw_config=dict(raw_config),
@@ -265,3 +276,31 @@ class Model(BaseModel):
             hf_revision_sha=hf_revision_sha,
             last_synced_at=last_synced_at,
         )
+
+
+def _native_dtype_from_raw_config(raw_config: dict[str, Any]) -> str:
+    """Derive `Model.native_dtype` from a HF config.json with a
+    fallback chain that handles natively-quantized models (gpt-oss
+    MXFP4, GPTQ INT4, etc.) that don't ship `torch_dtype`.
+
+    Fallback order:
+      1. `torch_dtype` — historical key, present on every full-
+         precision model and most fine-tunes
+      2. `dtype` — newer convention some 2025+ releases use
+      3. `quantization_config.quant_method` — natively-quantized
+         models (gpt-oss is MXFP4)
+      4. "unknown" — last resort, keeps the projection alive
+         rather than refusing the row outright
+
+    Pure metadata — no math layer reads native_dtype today.
+    """
+    for key in ("torch_dtype", "dtype"):
+        value = raw_config.get(key)
+        if value is not None:
+            return str(value)
+    qcfg = raw_config.get("quantization_config")
+    if isinstance(qcfg, dict):
+        method = qcfg.get("quant_method")
+        if method is not None:
+            return str(method)
+    return "unknown"
