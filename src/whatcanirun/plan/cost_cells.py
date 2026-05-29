@@ -498,35 +498,42 @@ def _partial_envelope_for_gpu_rental(
             "gpu_specs": 0.85,
             "freshness": 0.8,
         },
-        freshness={
-            "computeprices": price.last_updated,
-            "huggingface": model.last_synced_at,
-        },
+        freshness=_freshness_from_sources(sources),
         verify_links=verify_links,
     )
 
 
 def _partial_envelope_for_hosted_api(price: LlmPriceRow) -> TrustEnvelope:
+    sources = [
+        Source(
+            name="computeprices",
+            detail=f"GET /api/v1/llm-prices, {price.provider_slug}/{price.model_slug}",
+            last_updated=price.last_updated,
+        )
+    ]
     return TrustEnvelope(
-        sources=[
-            Source(
-                name="computeprices",
-                detail=f"GET /api/v1/llm-prices, {price.provider_slug}/{price.model_slug}",
-                last_updated=price.last_updated,
-            )
-        ],
+        sources=sources,
         confidence_breakdown={
             "pricing": 0.95,
             "throughput": 0.0,  # hosted API throughput not modeled
             "freshness": 0.8,
         },
-        freshness={"computeprices": price.last_updated},
+        freshness=_freshness_from_sources(sources),
         # LlmPriceRow doesn't carry a per-row source_url (CP's
         # response only puts that on gpu-prices). The CP API
         # endpoint is the right baseline audit link — Source.name=
         # 'computeprices' resolves cleanly to this URL.
         verify_links=[_CP_LLM_PRICES_URL],
     )
+
+
+def _freshness_from_sources(sources: list[Source]) -> dict[str, datetime]:
+    """Project the assembled sources list into the freshness map
+    spec/SHARED.md mandates. Keeping the two in lockstep (rather
+    than hand-maintaining a parallel dict literal) makes it
+    impossible to cite a Source whose timestamp the consumer can't
+    look up — the M08 round-3 Copilot finding."""
+    return {src.name: src.last_updated for src in sources}
 
 
 def _find_matched_bench_cell(
@@ -631,7 +638,13 @@ def render_cost_cells_resource(
             }
         )
 
-    table = pa.Table.from_pylist(rows) if rows else _empty_table()
+    # Pass the documented schema explicitly so all-None columns
+    # (e.g. gpu_slug / tp_size / hourly_usd in a hosted-API-only
+    # render) keep their typed form instead of being inferred as
+    # pa.null() — Copilot R3 finding. Schema MUST match
+    # `_empty_table` so the resource format is the same across
+    # renders.
+    table = pa.Table.from_pylist(rows, schema=_resource_schema()) if rows else _empty_table()
     con = duckdb.connect(":memory:")
     con.register("cells", table)
     # `.sql(...).arrow()` returns a RecordBatchReader; tabularize
@@ -644,6 +657,38 @@ def render_cost_cells_resource(
     return buf.getvalue()
 
 
+def _resource_schema() -> Any:
+    """Documented Arrow schema for the cost-cells resource —
+    shared between `_empty_table` (the zero-rows case) and the
+    `from_pylist(rows, schema=...)` non-empty path so all-None
+    columns can't degrade to `pa.null()` (R3 finding)."""
+    import pyarrow as pa
+
+    return pa.schema(
+        [
+            ("gpu_slug", pa.string()),
+            ("provider_slug", pa.string()),
+            ("model_slug", pa.string()),
+            ("quant_slug", pa.string()),
+            ("tp_size", pa.int64()),
+            ("batch_size", pa.int64()),
+            ("context_length", pa.int64()),
+            ("deployment_mode", pa.string()),
+            ("hourly_usd", pa.float64()),
+            ("pricing_type", pa.string()),
+            ("price_per_m_input_usd", pa.float64()),
+            ("price_per_m_output_usd", pa.float64()),
+            ("decode_tps", pa.float64()),
+            ("tps_source", pa.string()),
+            ("tps_confidence", pa.float64()),
+            ("fits", pa.bool_()),
+            ("cost_per_m_output_usd_self_hosted", pa.float64()),
+            ("availability_modeled", pa.bool_()),
+            ("trust_confidence", pa.float64()),
+        ]
+    )
+
+
 def _empty_table() -> Any:
     """Empty pyarrow.Table with the documented schema. Allows
     the resource to render valid Parquet bytes even when no
@@ -651,26 +696,4 @@ def _empty_table() -> Any:
     response, not a None)."""
     import pyarrow as pa
 
-    return pa.table(
-        {
-            "gpu_slug": pa.array([], type=pa.string()),
-            "provider_slug": pa.array([], type=pa.string()),
-            "model_slug": pa.array([], type=pa.string()),
-            "quant_slug": pa.array([], type=pa.string()),
-            "tp_size": pa.array([], type=pa.int64()),
-            "batch_size": pa.array([], type=pa.int64()),
-            "context_length": pa.array([], type=pa.int64()),
-            "deployment_mode": pa.array([], type=pa.string()),
-            "hourly_usd": pa.array([], type=pa.float64()),
-            "pricing_type": pa.array([], type=pa.string()),
-            "price_per_m_input_usd": pa.array([], type=pa.float64()),
-            "price_per_m_output_usd": pa.array([], type=pa.float64()),
-            "decode_tps": pa.array([], type=pa.float64()),
-            "tps_source": pa.array([], type=pa.string()),
-            "tps_confidence": pa.array([], type=pa.float64()),
-            "fits": pa.array([], type=pa.bool_()),
-            "cost_per_m_output_usd_self_hosted": pa.array([], type=pa.float64()),
-            "availability_modeled": pa.array([], type=pa.bool_()),
-            "trust_confidence": pa.array([], type=pa.float64()),
-        }
-    )
+    return pa.Table.from_pylist([], schema=_resource_schema())

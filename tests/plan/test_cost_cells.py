@@ -851,3 +851,119 @@ def test_every_cell_carries_unmodified_availability_caveat() -> None:
     for c in cells:
         assert c.availability_modeled is False
         assert "Price source does not guarantee current rentable capacity" in c.availability_caveat
+
+
+def test_freshness_map_includes_every_source_last_updated() -> None:
+    """Copilot review (round 3): `TrustEnvelope.freshness` is the
+    per-source timestamp map — every entry in `sources` should
+    have its `name` keyed into `freshness` with its `last_updated`.
+    The pre-R3 code hardcoded only `computeprices` + `huggingface`,
+    so a tier-2 AA / tier-3 bandwidth / tier-1 anchor envelope
+    cited those tiers in `sources` but never surfaced their
+    timestamps in `freshness`. Consumers reading per-upstream
+    staleness had to re-parse `sources[]`."""
+    aa_row = AaModelRow.project(
+        {
+            "id": "u",
+            "slug": "llama-3-3-instruct-70b",
+            "name": "llama",
+            "model_creator": {"id": "v", "name": "Meta", "slug": "meta"},
+            "release_date": "2024-12-06",
+            "median_output_tokens_per_second": 89.6,
+            "median_time_to_first_token_seconds": 0.5,
+            "median_time_to_first_answer_token": 1.0,
+            "pricing": {},
+            "evaluations": {},
+        }
+    )
+    aa_capture_ts = datetime(2026, 5, 27, tzinfo=dt.UTC)
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[],
+        aa_observations=[aa_row],
+        aa_data_freshness=aa_capture_ts,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
+    freshness = h100.trust_envelope.freshness
+    # Every Source in the envelope must have a matching freshness entry.
+    for src in h100.trust_envelope.sources:
+        assert src.name in freshness, (
+            f"Source {src.name!r} cited in sources[] but missing from "
+            f"freshness map — spec/SHARED.md says freshness is the "
+            f"per-source timestamp map, not a hand-picked subset"
+        )
+        assert freshness[src.name] == src.last_updated
+    # Specifically: AA tier-2 puts artificial_analysis in freshness.
+    assert "artificial_analysis" in freshness
+    assert freshness["artificial_analysis"] == aa_capture_ts
+
+
+def test_hosted_api_freshness_map_includes_computeprices() -> None:
+    """Same Copilot R3 rule applies to the hosted_api_token
+    envelope: `freshness` should mirror the sources list, not be
+    a separately-maintained constant. Currently both are
+    consistent (just `computeprices`); pin it so a future
+    helper change (e.g. adding HF Source to hosted_api when M09
+    wraps responses) can't drift them apart silently."""
+    cells = query_cost_cells(
+        gpu_prices=[],
+        llm_prices=[_llm_price()],
+        gpu_catalog=[],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[],
+        aa_observations=None,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    hosted = next(c for c in cells if c.deployment_mode == "hosted_api_token")
+    freshness = hosted.trust_envelope.freshness
+    for src in hosted.trust_envelope.sources:
+        assert src.name in freshness
+        assert freshness[src.name] == src.last_updated
+
+
+def test_render_resource_preserves_typed_columns_when_hosted_only() -> None:
+    """Copilot review (round 3): `pa.Table.from_pylist(rows)`
+    infers column types from the data. When a render input only
+    produces `hosted_api_token` cells, the gpu_rental-specific
+    columns (`gpu_slug`, `quant_slug`, `tp_size`, `hourly_usd`,
+    `pricing_type`, `decode_tps`, `fits`, ...) are all-None and
+    Arrow infers `pa.null()` for them — an unstable schema that
+    diverges from `_empty_table` and may fail downstream readers.
+
+    Fix: pass the documented schema to `from_pylist` for non-empty
+    tables too, so the parquet output's schema is the same in
+    every render."""
+    import io
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from whatcanirun.plan.cost_cells import render_cost_cells_resource
+
+    parquet_bytes = render_cost_cells_resource(
+        gpu_prices=[],
+        llm_prices=[_llm_price()],
+        gpu_catalog=[],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[],
+        aa_observations=None,
+    )
+    table = pq.read_table(io.BytesIO(parquet_bytes))
+    schema = table.schema
+    # Columns that are all-None in a hosted-only render. Arrow's
+    # default inference would map these to pa.null() — the test
+    # asserts the explicit documented schema wins instead.
+    assert schema.field("gpu_slug").type == pa.string()
+    assert schema.field("quant_slug").type == pa.string()
+    assert schema.field("tp_size").type == pa.int64()
+    assert schema.field("hourly_usd").type == pa.float64()
+    assert schema.field("pricing_type").type == pa.string()
+    assert schema.field("decode_tps").type == pa.float64()
+    assert schema.field("fits").type == pa.bool_()
