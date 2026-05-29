@@ -23,7 +23,9 @@ Spec § CostCell schema, § Public surface, § Derived field math.
 
 from __future__ import annotations
 
+import datetime as dt_module
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -39,6 +41,14 @@ from whatcanirun.trust.envelope import Source, TrustEnvelope
 
 DeploymentMode = Literal["cloud_gpu_rental", "hosted_api_token"]
 PricingType = Literal["on_demand", "spot"]
+
+# The CP API endpoints that contributed each cell's data —
+# verify_links cite these so the LLM client can show the user
+# exactly which CP endpoint to audit. Per-row Source.url
+# (gpu_price.source_url is the provider's PRICING PAGE, not the
+# CP API) goes alongside.
+_CP_GPU_PRICES_URL = "https://www.computeprices.com/api/v1/gpu-prices"
+_CP_LLM_PRICES_URL = "https://www.computeprices.com/api/v1/llm-prices"
 
 # Verbatim per spec § CostCell schema. The text is part of the
 # trust contract — M09 surfaces this in tool responses, and a
@@ -117,6 +127,7 @@ def query_cost_cells(
     bench_cells: list[BenchmarkCell],
     aa_observations: list[AaModelRow] | None,
     filters: CostCellFilters,
+    aa_data_freshness: datetime | None = None,
 ) -> list[CostCell]:
     """Tool-call hot path. Pure Python list comprehensions over
     in-memory caches. NO SQL.
@@ -247,7 +258,18 @@ def query_cost_cells(
                             tps_estimate=tps,
                             fit_result=fit,
                             cost_per_m_output_usd_self_hosted=cost_per_m,
-                            trust_envelope=_partial_envelope_for_gpu_rental(price, tps, model),
+                            trust_envelope=_partial_envelope_for_gpu_rental(
+                                price=price,
+                                tps=tps,
+                                model=model,
+                                bench_cells=bench_cells,
+                                gpu_slug=price.gpu_slug,
+                                model_slug=model.slug,
+                                quant_slug=quant.slug,
+                                batch_size=filters.batch_size,
+                                context_length=filters.context_length,
+                                aa_data_freshness=aa_data_freshness,
+                            ),
                         )
                     )
 
@@ -322,9 +344,17 @@ def _self_hosted_cost(
 
 
 def _partial_envelope_for_gpu_rental(
+    *,
     price: GpuPriceRow,
     tps: TpsEstimate,
     model: Model,
+    bench_cells: list[BenchmarkCell],
+    gpu_slug: str,
+    model_slug: str,
+    quant_slug: str,
+    batch_size: int,
+    context_length: int,
+    aa_data_freshness: datetime | None,
 ) -> TrustEnvelope:
     """M08 builds the per-cell envelope with the data it has
     direct access to: pricing source + freshness, throughput
@@ -363,26 +393,56 @@ def _partial_envelope_for_gpu_rental(
             last_updated=model.last_synced_at,
         ),
     ]
-    verify_links = [price.source_url]
+    # verify_links cite BOTH the CP API endpoint (the actual
+    # upstream that contributed the pricing data; matches
+    # Source.name='computeprices') AND the provider's pricing
+    # page (which the price row's source_url points at — gives
+    # the user a human-readable view).
+    verify_links = [_CP_GPU_PRICES_URL, price.source_url]
+
+    # Anchor freshness: when the TPS number came from an explicit
+    # BenchmarkCell row (Tier 1a/1b), Source.last_updated should
+    # reflect the BENCHMARK's measured_at, not the GPU price's
+    # last_updated (which is a CP catalog freshness, unrelated to
+    # when the anchor was actually measured). Look up the matched
+    # cell here so the timestamp is correct.
+    matched_anchor = _find_matched_bench_cell(
+        bench_cells=bench_cells,
+        gpu_slug=gpu_slug,
+        model_slug=model_slug,
+        quant_slug=quant_slug,
+        batch_size=batch_size,
+        context_length=context_length,
+    )
 
     if tps.source == "own_measured":
         # v2 only — but the dispatch logic is here so the v2
         # unlock is a no-op at the trust envelope layer.
+        anchor_ts = (
+            datetime.combine(matched_anchor.measured_at, datetime.min.time(), tzinfo=dt_module.UTC)
+            if matched_anchor is not None
+            else price.last_updated
+        )
         sources.append(
             Source(
                 name="own_measured_benchmark",
                 detail=tps.anchor_detail or "",
-                last_updated=price.last_updated,
+                last_updated=anchor_ts,
             )
         )
         if tps.source_url:
             verify_links.append(tps.source_url)
     elif tps.source == "public_benchmark_anchor":
+        anchor_ts = (
+            datetime.combine(matched_anchor.measured_at, datetime.min.time(), tzinfo=dt_module.UTC)
+            if matched_anchor is not None
+            else price.last_updated
+        )
         sources.append(
             Source(
                 name="public_benchmark_anchor",
                 detail=tps.anchor_detail or "",
-                last_updated=price.last_updated,
+                last_updated=anchor_ts,
             )
         )
         if tps.source_url:
@@ -391,7 +451,11 @@ def _partial_envelope_for_gpu_rental(
         # AA contributed the throughput number. AA's free-tier
         # license requires the verbatim attribution string on
         # every consumer-visible source entry — that's the M04
-        # AA_ATTRIBUTION_STRING constant.
+        # AA_ATTRIBUTION_STRING constant. Caller (M09) threads
+        # aa_data_freshness through so Source.last_updated
+        # reflects the AA cache timestamp; falls back to
+        # price.last_updated when not supplied (less accurate but
+        # honest about which signal we have).
         from whatcanirun.pricing.artificial_analysis import (
             AA_ATTRIBUTION_STRING,
         )
@@ -400,17 +464,18 @@ def _partial_envelope_for_gpu_rental(
             Source(
                 name="artificial_analysis",
                 detail=tps.anchor_detail or "AA median_output_tokens_per_second",
-                last_updated=price.last_updated,
+                last_updated=aa_data_freshness or price.last_updated,
                 license_attribution=AA_ATTRIBUTION_STRING,
             )
         )
     elif tps.source == "bandwidth_heuristic_single_stream":
         # The number derives from CP's specs.memory_bandwidth_gbps
-        # which the computeprices Source already cites, but the
-        # heuristic itself is a distinct provenance — M09 surfaces
-        # "single-stream calibration KERNEL_EFFICIENCY=0.75, ±50%
-        # at small batch" in the caveats so the user understands
-        # this isn't a measured anchor.
+        # which the computeprices Source already cites — using the
+        # price's last_updated is the right signal here (it's CP's
+        # freshness). M09 surfaces "single-stream calibration
+        # KERNEL_EFFICIENCY=0.75, ±50% at small batch" in the
+        # caveats so the user understands this isn't a measured
+        # anchor.
         sources.append(
             Source(
                 name="bandwidth_heuristic",
@@ -456,7 +521,40 @@ def _partial_envelope_for_hosted_api(price: LlmPriceRow) -> TrustEnvelope:
             "freshness": 0.8,
         },
         freshness={"computeprices": price.last_updated},
+        # LlmPriceRow doesn't carry a per-row source_url (CP's
+        # response only puts that on gpu-prices). The CP API
+        # endpoint is the right baseline audit link — Source.name=
+        # 'computeprices' resolves cleanly to this URL.
+        verify_links=[_CP_LLM_PRICES_URL],
     )
+
+
+def _find_matched_bench_cell(
+    *,
+    bench_cells: list[BenchmarkCell],
+    gpu_slug: str,
+    model_slug: str,
+    quant_slug: str,
+    batch_size: int,
+    context_length: int,
+) -> BenchmarkCell | None:
+    """Find the BenchmarkCell row that M07's estimate_tps would
+    have matched for this op-point — used by the envelope helper
+    so Source.last_updated reflects the BENCHMARK's measured_at
+    rather than the GPU price's freshness. Mirrors the matching
+    rule in `whatcanirun.inference.tps_estimator._cell_matches`
+    (tp_size=1 single-GPU)."""
+    for cell in bench_cells:
+        if (
+            cell.gpu_slug == gpu_slug
+            and cell.model_slug == model_slug
+            and cell.quant_slug == quant_slug
+            and cell.tp_size == 1
+            and cell.batch_size == batch_size
+            and cell.context_length == context_length
+        ):
+            return cell
+    return None
 
 
 # ============================================================ Resource path

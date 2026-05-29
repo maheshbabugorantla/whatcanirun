@@ -608,6 +608,141 @@ def test_envelope_cites_huggingface_when_fit_check_used_model_data() -> None:
     assert "huggingface" in h100.trust_envelope.freshness
 
 
+def test_benchmark_source_last_updated_uses_measured_at_not_price_freshness() -> None:
+    """Copilot review (round 2): the Tier 1b public_benchmark_anchor
+    Source's `last_updated` was set to `price.last_updated`
+    (ComputePrices freshness), which is unrelated to when the
+    benchmark itself was measured. Per the trust contract,
+    Source.last_updated should reflect the benchmark's own
+    freshness (BenchmarkCell.measured_at) so consumers reading
+    `sources[].last_updated` see the right timestamp."""
+    anchor_measured = date(2025, 11, 1)
+    anchor = BenchmarkCell(
+        gpu_slug="h100",
+        model_slug="llama-3-3-70b",
+        quant_slug="fp8",
+        tp_size=1,
+        batch_size=1,
+        context_length=4096,
+        decode_tps=35.2,
+        prefill_tps=None,
+        ttft_ms=None,
+        engine="vllm",
+        engine_version="0.6.x",
+        measured_at=anchor_measured,
+        source="public_benchmark_anchor",
+        source_url="https://example.com/anchor",
+        notes="",
+    )
+    price_freshness = datetime(2026, 5, 28, tzinfo=dt.UTC)
+    gpu_price = _gpu_price()
+    # Manually set price.last_updated to a known later value
+    object.__setattr__(gpu_price, "last_updated", price_freshness)
+
+    cells = query_cost_cells(
+        gpu_prices=[gpu_price],
+        llm_prices=[],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[anchor],
+        aa_observations=None,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
+    anchor_sources = [s for s in h100.trust_envelope.sources if s.name == "public_benchmark_anchor"]
+    assert anchor_sources, "public_benchmark_anchor Source missing"
+    # Source.last_updated should be the anchor's measured_at, not
+    # the price row's last_updated.
+    assert anchor_sources[0].last_updated.date() == anchor_measured
+
+
+def test_hosted_api_envelope_populates_verify_links() -> None:
+    """Copilot review (round 2): hosted_api_token envelope had
+    empty verify_links — consumers had no URL to audit the
+    upstream pricing source. LlmPriceRow doesn't carry a per-row
+    source_url, but the ComputePrices llm-prices endpoint URL is
+    a defensible baseline verification link."""
+    cells = query_cost_cells(
+        gpu_prices=[],
+        llm_prices=[_llm_price()],
+        gpu_catalog=[],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[],
+        aa_observations=None,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    hosted = next(c for c in cells if c.deployment_mode == "hosted_api_token")
+    assert hosted.trust_envelope.verify_links, (
+        "hosted_api_token envelope has empty verify_links — consumer "
+        "can't audit the upstream pricing source"
+    )
+    assert any("computeprices.com" in link.lower() for link in hosted.trust_envelope.verify_links)
+
+
+def test_gpu_rental_verify_links_includes_computeprices_endpoint() -> None:
+    """Copilot review (round 2): verify_links had the provider's
+    pricing page (e.g. lambdalabs.com/pricing) but the
+    corresponding Source claimed the upstream was the
+    ComputePrices API. verify_links must include the CP endpoint
+    URL too so a consumer can match Source.name='computeprices'
+    to a CP-pointing URL."""
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[_anchor()],
+        aa_observations=None,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
+    assert any("computeprices.com" in link.lower() for link in h100.trust_envelope.verify_links), (
+        "gpu_rental verify_links missing computeprices.com URL — Source.name="
+        "'computeprices' has no matching audit link"
+    )
+
+
+def test_aa_source_last_updated_uses_aa_freshness_when_provided() -> None:
+    """Copilot review (round 2): the artificial_analysis Source's
+    last_updated was set to price.last_updated (CP freshness),
+    which is unrelated to when AA was captured. Threading
+    `aa_freshness` through query_cost_cells (M09 will pass the
+    AA cache timestamp) gets the right signal into Source."""
+    aa_row = AaModelRow.project(
+        {
+            "id": "u",
+            "slug": "llama-3-3-instruct-70b",
+            "name": "llama",
+            "model_creator": {"id": "v", "name": "Meta", "slug": "meta"},
+            "release_date": "2024-12-06",
+            "median_output_tokens_per_second": 89.6,
+            "median_time_to_first_token_seconds": 0.5,
+            "median_time_to_first_answer_token": 1.0,
+            "pricing": {},
+            "evaluations": {},
+        }
+    )
+    aa_capture_ts = datetime(2026, 5, 27, tzinfo=dt.UTC)
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[],
+        aa_observations=[aa_row],
+        aa_data_freshness=aa_capture_ts,
+        filters=_filters(batch_size=1, context_length=4096),
+    )
+    h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
+    aa_sources = [s for s in h100.trust_envelope.sources if s.name == "artificial_analysis"]
+    assert aa_sources
+    assert aa_sources[0].last_updated == aa_capture_ts
+
+
 def test_envelope_lists_source_matching_tps_provenance_aa() -> None:
     """Trust-contract gap pre-push /review caught: when the
     tps_estimate source is AA (Tier 2 provider_anchor), the
