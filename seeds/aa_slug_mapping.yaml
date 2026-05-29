@@ -61,18 +61,23 @@
 
 - cp_slug: qwen-2-5-7b
   aa_slugs: []
-  investigation_note: "AA does not track Qwen 2.5-7B at this slug."
+  investigation_note: "Confirmed absent on 2026-05-27 AA capture after exhaustive token-overlap re-audit. AA tracks `qwen2-5-coder-7b-instruct` (CODER variant) but not the base Qwen 2.5 7B Instruct. AA's qwen3-* entries are Qwen 3, a different model family."
 
 - cp_slug: qwen-2-5-14b
   aa_slugs: []
-  investigation_note: "AA does not track Qwen 2.5-14B at this slug."
+  investigation_note: "Confirmed absent on 2026-05-27 AA capture after exhaustive token-overlap re-audit. AA tracks qwen3-14b-instruct (Qwen 3, different family) and deepseek-r1-distill-qwen-14b (DeepSeek distillation) — neither matches the vanilla Qwen 2.5 14B Instruct."
 
 - cp_slug: qwen-2-5-72b
-  aa_slugs: []
-  investigation_note: "AA tracks under a provider-specific slug; left unmapped."
+  aa_slugs:
+    - aa_slug: qwen2-5-72b-instruct
+      reasoning_effort: null
+  investigation_note: "Re-audit caught: AA writes the slug WITHOUT a dash between `qwen` and `2` (qwen2-5-72b-instruct) where CP writes it WITH a dash (qwen-2-5-72b). Both refer to the same Qwen 2.5 72B Instruct model."
 
 - cp_slug: qwen-2-5-coder-32b
-  aa_slugs: []
+  aa_slugs:
+    - aa_slug: qwen2-5-coder-32b-instruct
+      reasoning_effort: null
+  investigation_note: "Same qwen2-5-* slug convention as qwen-2-5-72b (no dash between qwen and 2)."
 
 - cp_slug: mistral-7b
   aa_slugs:
@@ -81,6 +86,7 @@
 
 - cp_slug: mistral-nemo
   aa_slugs: []
+  investigation_note: "Confirmed absent on 2026-05-27 AA capture — no AA slug contains both `mistral` and `nemo` tokens. Likely future AA addition; until then routes to Tier 3."
 
 - cp_slug: mistral-large
   aa_slugs:
