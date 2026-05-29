@@ -186,7 +186,11 @@ class TestFromHfConfigMissingKeys:
             "num_key_value_heads",
             "hidden_size",
             "max_position_embeddings",
-            "torch_dtype",
+            # `torch_dtype` is intentionally NOT in this list — it
+            # became optional in M07 when natively-quantized models
+            # (gpt-oss MXFP4, future INT4 releases) started shipping
+            # configs that omit it because the weight dtype is
+            # governed by `quantization_config.quant_method`.
         ],
     )
     def test_missing_required_key_raises_value_error_naming_the_field(
@@ -196,6 +200,39 @@ class TestFromHfConfigMissingKeys:
         del bad_raw[missing_key]
         with pytest.raises(ValueError, match=missing_key):
             Model.from_hf_config(raw_config=bad_raw, **self._BASE_KWARGS)
+
+    def test_torch_dtype_absent_falls_back_to_quantization_method(self) -> None:
+        """gpt-oss-120b and gpt-oss-20b ship MXFP4-quantized; their
+        HF config.json files have NO `torch_dtype` field — instead
+        carrying `quantization_config.quant_method` = 'mxfp4'.
+        M07's tracked_models expansion includes both, so
+        from_hf_config must handle the absence.
+
+        Fallback order:
+          1. `torch_dtype` (the historical key)
+          2. `dtype` (newer HF convention for some releases)
+          3. `quantization_config.quant_method` (natively-quantized)
+          4. "unknown" (last resort — keeps the projection alive
+             rather than refusing the row outright; M07's math
+             doesn't read native_dtype anyway).
+        """
+        raw_no_dtype = dict(self._COMPLETE_RAW)
+        del raw_no_dtype["torch_dtype"]
+        raw_no_dtype["quantization_config"] = {"quant_method": "mxfp4"}
+        model = Model.from_hf_config(raw_config=raw_no_dtype, **self._BASE_KWARGS)
+        assert model.native_dtype == "mxfp4"
+
+    def test_torch_dtype_absent_with_no_fallback_signal_uses_unknown(self) -> None:
+        """Defense in depth: a config with neither torch_dtype nor
+        a quantization hint still constructs a Model — we just
+        record native_dtype='unknown' rather than refusing the
+        whole row. The math layer doesn't read native_dtype, so
+        this isn't a trust contract violation, but a future
+        consumer that does care will see the honest 'unknown'."""
+        raw_no_dtype = dict(self._COMPLETE_RAW)
+        del raw_no_dtype["torch_dtype"]
+        model = Model.from_hf_config(raw_config=raw_no_dtype, **self._BASE_KWARGS)
+        assert model.native_dtype == "unknown"
 
 
 class TestValidation:

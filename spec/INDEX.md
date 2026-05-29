@@ -17,7 +17,7 @@ Critical path = 8 weekends at ~6h each (~54h implementation-only). Plan for **75
 | M04 | [Artificial Analysis optional client](M04-aa-optional-client.md) | 4h | parallel | ✓ |
 | M05 | [Workload profile seeds](M05-workload-profiles.md) | 1h | parallel | ✓ |
 | M06 | [fit_check](M06-fit-check.md) | 4h | ✓ | ✓ |
-| M07 | [tps_estimator](M07-tps-estimator.md) | 4h | ✓ | ⬜ |
+| M07 | [tps_estimator](M07-tps-estimator.md) | 4h | ✓ | ✓ |
 | M08 | [Cost cells join layer](M08-cost-cells.md) | 3h | ✓ | ⬜ |
 | M09 | [MCP server](M09-mcp-server.md) | 10h | ✓ | ⬜ |
 | M10 | [Benchmark seeds (public sources)](M10-benchmark-seeds.md) | 6h | parallel | ⬜ |

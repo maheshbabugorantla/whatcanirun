@@ -37,14 +37,14 @@
   datasheet_url: "https://www.nvidia.com/en-us/data-center/h100/"
 
 - slug: h100nvl
-  fp8_tflops_dense: null
+  fp8_tflops_dense: 1671
   fp4_tflops_dense: null
   form_factor: NVL
   supports_fp8: true
   supports_fp4: false
   attention_kernels_supported: [flash_attention_2, flash_attention_3, paged_attention]
-  notes: "Hopper NVL, 94GB HBM3, 400W. fp8_tflops_dense deferred pending H100 NVL product brief check (M07 treats null as requires_measurement)."
-  datasheet_url: "https://www.nvidia.com/en-us/data-center/h100/"
+  notes: "Hopper NVL, 94GB HBM3, 400W. FP8 dense = 1671 TFLOPS derived from NVIDIA H100 NVL Product Brief PB-11773-001 (3341 w/ sparsity ÷ 2; 2:1 sparse:dense is architectural for 4th-gen Tensor Cores and matches the H100 SXM 3958/1979 pattern)."
+  datasheet_url: "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/h100/PB-11773-001_v01.pdf"
 
 - slug: h200
   fp8_tflops_dense: 1979
@@ -57,24 +57,24 @@
   datasheet_url: "https://www.nvidia.com/en-us/data-center/h200/"
 
 - slug: b100
-  fp8_tflops_dense: null
-  fp4_tflops_dense: null
+  fp8_tflops_dense: 3500
+  fp4_tflops_dense: 7000
   form_factor: SXM
   supports_fp8: true
   supports_fp4: true
   attention_kernels_supported: [flash_attention_2, flash_attention_3, paged_attention]
-  notes: "Blackwell SXM, 192GB HBM3e, 700W. FP8/FP4 dense TFLOPS deferred pending NVIDIA Blackwell whitepaper read; B100 is the lower-TDP B200 variant. M07 will treat null as requires_measurement."
-  datasheet_url: "https://www.nvidia.com/en-us/data-center/dgx-b200/"
+  notes: "Blackwell SXM, 192GB HBM3e, 700W. FP8 dense = 3500 TFLOPS, FP4 dense = 7000 TFLOPS per NVIDIA Blackwell architecture page. B100 is the lower-TDP B200 variant (7000W vs 1000W) — both share the same 5th-gen Tensor Cores but B100 is binned for the lower power envelope."
+  datasheet_url: "https://www.nvidia.com/en-us/data-center/technologies/blackwell-architecture/"
 
 - slug: b200
-  fp8_tflops_dense: null
-  fp4_tflops_dense: null
+  fp8_tflops_dense: 4500
+  fp4_tflops_dense: 9000
   form_factor: SXM
   supports_fp8: true
   supports_fp4: true
   attention_kernels_supported: [flash_attention_2, flash_attention_3, paged_attention]
-  notes: "Blackwell SXM, 192GB HBM3e, 1000W. FP8/FP4 dense TFLOPS deferred pending Blackwell whitepaper. DGX B200 page advertises with-sparsity totals only (72 PFLOPS FP4 over 8 GPUs); deriving per-GPU dense from that is too lossy to trust here."
-  datasheet_url: "https://www.nvidia.com/en-us/data-center/dgx-b200/"
+  notes: "Blackwell SXM, 192GB HBM3e, 1000W. FP8 dense = 4500 TFLOPS, FP4 dense = 9000 TFLOPS per NVIDIA Blackwell architecture page. Cross-check: DGX B200 advertises 72 PFLOPS FP8 sparse / 8 GPUs = 9 per-GPU sparse → 4.5 per-GPU dense (2:1 ratio holds)."
+  datasheet_url: "https://www.nvidia.com/en-us/data-center/technologies/blackwell-architecture/"
 
 - slug: gb200
   fp8_tflops_dense: null
@@ -83,28 +83,28 @@
   supports_fp8: true
   supports_fp4: true
   attention_kernels_supported: [flash_attention_2, flash_attention_3, paged_attention]
-  notes: "Grace-Blackwell GB200 superchip (1 Grace + 2 Blackwell GPUs), NVL form, 192GB HBM3e per GPU, liquid-cooled. Per-GPU FP8/FP4 dense TFLOPS deferred; GB200 NVL72 page lists with-sparsity per-GPU only."
+  notes: "Grace-Blackwell GB200 superchip (1 Grace + 2 Blackwell GPUs), NVL form, 192GB HBM3e per GPU, liquid-cooled. STAYS NULL per trust contract: NVIDIA's GB200 NVL72 page advertises rack-level totals (720 PFLOPS FP8 / 1440 PFLOPS FP4 across 72 GPUs) and per-GPU sparse numbers, but no first-party citation clearly labels per-GPU DENSE values — GB200 uses the same Blackwell silicon as B200 but liquid-cooled at higher TDP (likely 5/10 PFLOPS dense per GPU vs B200's 4.5/9, but the binning is not first-party-confirmed). M07 treats null as compute-bound regime unknown and falls back to bandwidth-only."
   datasheet_url: "https://www.nvidia.com/en-us/data-center/gb200-nvl72/"
 
 - slug: gb300
-  fp8_tflops_dense: null
-  fp4_tflops_dense: null
+  fp8_tflops_dense: 5000
+  fp4_tflops_dense: 15000
   form_factor: NVL
   supports_fp8: true
   supports_fp4: true
   attention_kernels_supported: [flash_attention_2, flash_attention_3, paged_attention]
-  notes: "Grace + Blackwell Ultra (B300), NVL form. FP8/FP4 dense TFLOPS deferred pending Blackwell Ultra whitepaper; marketing claims ~1.5x B200 but no first-party dense number sighted yet."
-  datasheet_url: "https://www.nvidia.com/en-us/data-center/gb200-nvl72/"
+  notes: "Grace + Blackwell Ultra (B300), NVL form. FP8 dense = 5000 TFLOPS (vs B200's 4500), FP4 dense = 15000 TFLOPS (NVFP4) per NVIDIA developer blog 'Inside NVIDIA Blackwell Ultra: The Chip Powering the AI Factory Era'. B300 introduces NVFP4 with much higher dense FP4 than B200 (~1.67x); FP8 is a modest bump."
+  datasheet_url: "https://developer.nvidia.com/blog/inside-nvidia-blackwell-ultra-the-chip-powering-the-ai-factory-era/"
 
 - slug: l40
-  fp8_tflops_dense: null
+  fp8_tflops_dense: 362
   fp4_tflops_dense: null
   form_factor: PCIe
   supports_fp8: true
   supports_fp4: false
   attention_kernels_supported: [flash_attention_2, paged_attention]
-  notes: "Ada Lovelace PCIe, 48GB GDDR6, 300W. FP8 dense TFLOPS deferred pending L40 datasheet check; sibling L40S is 366 dense, L40 will be lower but exact figure not yet confirmed. No Flash Attention 3 (Hopper+ only)."
-  datasheet_url: "https://www.nvidia.com/en-us/data-center/l40/"
+  notes: "Ada Lovelace PCIe, 48GB GDDR6, 300W. FP8 dense = 362 TFLOPS (724 w/ sparsity per L40 datasheet PDF). Slightly below sibling L40S (366/733) due to lower TDP binning. No FP4 (Ada predates Blackwell), no Flash Attention 3 (Hopper+ only)."
+  datasheet_url: "https://www.nvidia.com/content/dam/en-zz/Solutions/design-visualization/support-guide/NVIDIA-L40-Datasheet-January-2023.pdf"
 
 - slug: l40s
   fp8_tflops_dense: 366
@@ -127,11 +127,11 @@
   datasheet_url: "https://www.nvidia.com/en-us/data-center/a100/"
 
 - slug: mi300x
-  fp8_tflops_dense: null
+  fp8_tflops_dense: 2614.9
   fp4_tflops_dense: null
   form_factor: OAM
   supports_fp8: true
   supports_fp4: false
   attention_kernels_supported: [paged_attention]
-  notes: "CDNA 3 OAM, 192GB HBM3, 750W. FP8 matrix dense TFLOPS deferred (AMD MI300X page would not load during M01 capture). Caveat: Flash Attention 2 on ROCm/vLLM lags CUDA support; v1 treats this GPU as paged_attention only per spec M01 out-of-scope note."
-  datasheet_url: "https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html"
+  notes: "CDNA 3 OAM, 192GB HBM3, 750W. FP8 matrix dense = 2614.9 TFLOPS (5229.8 w/ structured sparsity per AMD MI300X data sheet). No FP4 — CDNA 3 predates AMD's FP4 introduction. Caveat: Flash Attention 2 on ROCm/vLLM lags CUDA support; v1 treats this GPU as paged_attention only per spec M01 out-of-scope note."
+  datasheet_url: "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf"

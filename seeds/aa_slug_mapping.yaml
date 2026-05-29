@@ -58,3 +58,80 @@
   aa_slugs:
     - aa_slug: mistral-8x22b-instruct
       reasoning_effort: null
+
+- cp_slug: qwen-2-5-7b
+  aa_slugs: []
+  investigation_note: "Confirmed absent on 2026-05-27 AA capture after exhaustive token-overlap re-audit. AA tracks `qwen2-5-coder-7b-instruct` (CODER variant) but not the base Qwen 2.5 7B Instruct. AA's qwen3-* entries are Qwen 3, a different model family."
+
+- cp_slug: qwen-2-5-14b
+  aa_slugs: []
+  investigation_note: "Confirmed absent on 2026-05-27 AA capture after exhaustive token-overlap re-audit. AA tracks qwen3-14b-instruct (Qwen 3, different family) and deepseek-r1-distill-qwen-14b (DeepSeek distillation) — neither matches the vanilla Qwen 2.5 14B Instruct."
+
+- cp_slug: qwen-2-5-72b
+  aa_slugs:
+    - aa_slug: qwen2-5-72b-instruct
+      reasoning_effort: null
+  investigation_note: "Re-audit caught: AA writes the slug WITHOUT a dash between `qwen` and `2` (qwen2-5-72b-instruct) where CP writes it WITH a dash (qwen-2-5-72b). Both refer to the same Qwen 2.5 72B Instruct model."
+
+- cp_slug: qwen-2-5-coder-32b
+  aa_slugs:
+    - aa_slug: qwen2-5-coder-32b-instruct
+      reasoning_effort: null
+  investigation_note: "Same qwen2-5-* slug convention as qwen-2-5-72b (no dash between qwen and 2)."
+
+- cp_slug: mistral-7b
+  aa_slugs:
+    - aa_slug: mistral-7b-instruct
+      reasoning_effort: null
+
+- cp_slug: mistral-nemo
+  aa_slugs: []
+  investigation_note: "Confirmed absent on 2026-05-27 AA capture — no AA slug contains both `mistral` and `nemo` tokens. Likely future AA addition; until then routes to Tier 3."
+
+- cp_slug: mistral-large
+  aa_slugs:
+    - aa_slug: mistral-large
+      reasoning_effort: null
+
+- cp_slug: mistral-small
+  aa_slugs:
+    - aa_slug: mistral-small
+      reasoning_effort: null
+
+- cp_slug: mixtral-8x7b
+  aa_slugs:
+    - aa_slug: mixtral-8x7b-instruct
+      reasoning_effort: null
+
+- cp_slug: phi-4
+  aa_slugs:
+    - aa_slug: phi-4
+      reasoning_effort: null
+
+- cp_slug: deepseek-r1
+  aa_slugs:
+    - aa_slug: deepseek-r1
+      reasoning_effort: null
+  investigation_note: "DeepSeek R1 is the reasoning sibling of V3; MoE 671B total / 37B active. MLA attention."
+
+- cp_slug: deepseek-v3-1
+  aa_slugs:
+    - aa_slug: deepseek-v3-1
+      reasoning_effort: null
+  investigation_note: "Updated DeepSeek-V3 architecture; same MoE / MLA shape."
+
+- cp_slug: gpt-oss-20b
+  aa_slugs:
+    - aa_slug: gpt-oss-20b
+      reasoning_effort: null
+    - aa_slug: gpt-oss-20b-low
+      reasoning_effort: "low"
+  investigation_note: "AA tracks both base (non-reasoning) and low-effort reasoning rows."
+
+- cp_slug: gpt-oss-120b
+  aa_slugs:
+    - aa_slug: gpt-oss-120b
+      reasoning_effort: null
+    - aa_slug: gpt-oss-120b-low
+      reasoning_effort: "low"
+  investigation_note: "Live-data smoke test target for M07 reasoning-effort dimension acceptance — AA tracks base + low-effort variant; -medium/-high don't exist in 2026-05-27 capture so the synthetic-data unit tests pin those branches and this row pins the (None vs low) live-data discrimination."
