@@ -275,6 +275,14 @@ def _build_case_2_envelope(
         "freshness": pricing_score,
     }
 
+    # Anchor BOTH `Source.last_updated` and the freshness map on
+    # the same `generated_at` that drove `pricing_score`. Using
+    # `price.last_updated` here (the per-row CP timestamp) would
+    # let the reported staleness disagree with the confidence
+    # score the LLM client surfaces — a per-row timestamp can be
+    # weeks old even when the snapshot itself is hours fresh, or
+    # vice versa. Anchoring on the snapshot timestamp keeps the
+    # two signals consistent.
     return TrustEnvelope(
         sources=[
             Source(
@@ -283,13 +291,13 @@ def _build_case_2_envelope(
                     f"llm-prices entry for model_slug={price.model_slug}, "
                     f"provider_slug={price.provider_slug}"
                 ),
-                last_updated=price.last_updated,
+                last_updated=generated_at,
             )
         ],
         confidence_breakdown=breakdown,
         assumptions={"llm_pricing_tier": price.pricing_type},
         caveats=[_CASE_2_CAVEAT],
-        freshness={"computeprices": price.last_updated},
+        freshness={"computeprices": generated_at},
         verify_links=["https://www.computeprices.com/api/v1/llm-prices"],
     )
 
