@@ -60,6 +60,17 @@ mcp: FastMCP = FastMCP(
 )
 
 
+# --------------------------------------------------------------- Tool registry
+# Decorator-based registration on the module-level `mcp` instance.
+# Each slice adds its tool here; the implementations live in
+# `whatcanirun/mcp_tools/` so this file stays a thin transport-layer
+# shell that wires the public surface.
+
+from whatcanirun.mcp_tools.catalog import list_catalog as _list_catalog  # noqa: E402
+
+mcp.tool(_list_catalog, name="list_catalog")
+
+
 def main() -> None:
     """`uvx whatcanirun-mcp` entry point. Runs the FastMCP stdio
     transport by default — the calling client (Claude Desktop,
