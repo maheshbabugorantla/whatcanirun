@@ -1058,3 +1058,90 @@ def test_anchor_last_updated_falls_back_when_no_matching_tier_cell() -> None:
         fallback,
     )
     assert ts == fallback
+
+
+def test_gpu_slug_filter_excludes_hosted_api_rows() -> None:
+    """Copilot review (round 8): a caller asking
+    `gpu_slug='h100'` wants ROWS THAT RUN ON H100 — hosted-API
+    rows have `gpu_slug=None` (provider runs the weights, not
+    the user's GPU), so they should NOT come back. Pre-fix, the
+    hosted-API branch ignored the gpu_slug filter and returned
+    rows that don't satisfy the documented filter contract."""
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[_llm_price()],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[_anchor()],
+        aa_observations=None,
+        filters=_filters(gpu_slug="h100", batch_size=1, context_length=4096),
+    )
+    hosted_rows = [c for c in cells if c.deployment_mode == "hosted_api_token"]
+    assert not hosted_rows, (
+        "gpu_slug='h100' filter should exclude hosted_api_token rows "
+        "(their gpu_slug is None — they don't match the filter)"
+    )
+
+
+def test_quant_slug_filter_excludes_hosted_api_rows() -> None:
+    """Same as above for quant_slug: hosted-API rows have
+    `quant_slug=None` because the provider chooses the quant.
+    A caller asking `quant_slug='fp8'` is asking for cells where
+    THAT quant runs — hosted-API rows don't satisfy."""
+    cells = query_cost_cells(
+        gpu_prices=[_gpu_price()],
+        llm_prices=[_llm_price()],
+        gpu_catalog=[_gpu()],
+        model_catalog=[_model()],
+        quantizations=[_quant()],
+        bench_cells=[_anchor()],
+        aa_observations=None,
+        filters=_filters(quant_slug="fp8", batch_size=1, context_length=4096),
+    )
+    hosted_rows = [c for c in cells if c.deployment_mode == "hosted_api_token"]
+    assert not hosted_rows
+
+
+def test_explicit_hosted_api_deployment_mode_overrides_gpu_quant_filters() -> None:
+    """The exclusion above is a soft inference — when the caller
+    EXPLICITLY asks for `deployment_mode='hosted_api_token'`,
+    we honor that and surface the hosted rows even if gpu_slug
+    or quant_slug filters look superficially inconsistent. The
+    explicit mode is the stronger signal.
+
+    The contract this test pins, in contrast to
+    `test_gpu_slug_filter_excludes_hosted_api_rows` above: the
+    SAME gpu_slug filter that previously suppressed hosted rows
+    no longer does so once `deployment_mode='hosted_api_token'`
+    is set. Compare the two tests to see the override flipping
+    the outcome."""
+    inputs = {
+        "gpu_prices": [_gpu_price()],
+        "llm_prices": [_llm_price()],
+        "gpu_catalog": [_gpu()],
+        "model_catalog": [_model()],
+        "quantizations": [_quant()],
+        "bench_cells": [_anchor()],
+        "aa_observations": None,
+    }
+    # Without the explicit mode, gpu_slug='h100' suppresses hosted.
+    without_override = query_cost_cells(
+        filters=_filters(gpu_slug="h100", quant_slug="fp8", batch_size=1, context_length=4096),
+        **inputs,  # type: ignore[arg-type]
+    )
+    assert not [c for c in without_override if c.deployment_mode == "hosted_api_token"]
+    # WITH the explicit mode, the same gpu_slug filter no longer
+    # suppresses hosted — the explicit mode wins.
+    with_override = query_cost_cells(
+        filters=_filters(
+            gpu_slug="h100",
+            quant_slug="fp8",
+            deployment_mode="hosted_api_token",
+            batch_size=1,
+            context_length=4096,
+        ),
+        **inputs,  # type: ignore[arg-type]
+    )
+    assert with_override, "explicit hosted_api_token mode should still produce rows"
+    assert all(c.deployment_mode == "hosted_api_token" for c in with_override)

@@ -103,7 +103,14 @@ class CostCellFilters:
     where M06's fit_check returned `fits=False`. `batch_size` and
     `context_length` are op-point parameters — they always
     influence the M06/M07 lookups even when not used as
-    filters."""
+    filters.
+
+    Cross-dimension note: a non-None `gpu_slug` or `quant_slug`
+    also implicitly suppresses the `hosted_api_token` branch
+    (hosted-API rows have `gpu_slug=None` / `quant_slug=None` and
+    can't satisfy those filters). To force hosted rows through
+    that suppression, pass `deployment_mode='hosted_api_token'`
+    explicitly — the explicit mode wins."""
 
     model_slug: str | None = None
     gpu_slug: str | None = None
@@ -271,7 +278,18 @@ def query_cost_cells(
                     )
 
     # ---------- hosted_api_token branch ----------
-    if filters.deployment_mode != "cloud_gpu_rental":
+    # Skip entirely when the caller asks for gpu_slug or quant_slug
+    # filtering — hosted-API rows have `gpu_slug=None` /
+    # `quant_slug=None` (the provider runs the weights, not on the
+    # user's GPU), so they can't satisfy those filters. Exception:
+    # an explicit `deployment_mode="hosted_api_token"` is the
+    # stronger signal — honor it even if gpu/quant filters look
+    # superficially inconsistent.
+    explicit_hosted = filters.deployment_mode == "hosted_api_token"
+    hosted_filtered_out = not explicit_hosted and (
+        filters.gpu_slug is not None or filters.quant_slug is not None
+    )
+    if filters.deployment_mode != "cloud_gpu_rental" and not hosted_filtered_out:
         for llm_price in llm_prices:
             if (
                 filters.provider_slug is not None
