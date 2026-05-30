@@ -16,12 +16,19 @@ model_slug requests through three cases:
 cache_dir)` is the persistence + sync primitive backing the
 `resolve_model` MCP tool. It:
 
-1. Validates slug + repo_id (delegated to HfModelSync.sync_model's
-   regex check — same vector surface)
-2. Atomically merges `(slug, hf_repo_id)` into
-   `<config_dir>/user_models.yaml`
-3. Triggers HfModelSync.sync_model to fetch + cache the config
-4. Returns ResolveModelResult with status + diagnostic
+1. Validates slug + repo_id explicitly with the same regex
+   patterns HfModelSync.sync_model enforces, BEFORE the sync call.
+   Earlier revisions deferred to sync_model's own regex check,
+   but the persistence-order fix (sync first, then write yaml)
+   needs the validation result locally so a malformed input never
+   reaches the network round-trip — and so we never persist a
+   bad `(slug, repo_id)` row to `user_models.yaml`.
+2. Calls HfModelSync.sync_model to fetch + cache the config.
+3. ONLY on sync success, atomically merges `(slug, hf_repo_id)`
+   into `<config_dir>/user_models.yaml`. A sync failure (network,
+   HF 404, malformed config) leaves the yaml untouched so we
+   never persist a row we can't actually serve.
+4. Returns ResolveModelResult with status + diagnostic.
 
 `ResolveModelResult` deliberately carries no trust_envelope per
 spec/M09 § Public surface §6 — it's a status + diagnostic
