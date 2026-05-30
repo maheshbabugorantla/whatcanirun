@@ -86,9 +86,11 @@ async def find_cheapest_deployment(
 
     Per spec/M09 § Case 2: find_cheapest_deployment supports the
     partial-CostCell path for hosted_api_token rows when the model
-    is in CP's catalog but not in our tracked-models set. The full
-    Case 2 partial-cell construction is M11/follow-up work; for
-    now Case 2 collapses to Case 3 (UnknownModelResponse).
+    is in CP's catalog but not in our tracked-models set. The
+    Case 2 branch builds per-provider partial CostCells via
+    `build_case_2_partial_cells` and runs them through the same
+    `find_cheapest_deployments` ranker as Case 1, so the wire
+    shape (`list[CostCell]`) is identical across cases.
     """
     _ = region  # accepted for v2 forward-compat; v1 no-op
     from whatcanirun.mcp_tools.deps import load_runtime_deps

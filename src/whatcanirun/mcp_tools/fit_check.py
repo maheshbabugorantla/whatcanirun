@@ -8,9 +8,11 @@ a stable wire schema.
 
 `build_fit_check_response` is the pure builder exposed for unit
 tests. The async `fit_check` function is the FastMCP-registered
-tool entry point — Slice L will replace the placeholder slug
-lookup with the full unknown-model dispatcher (Case 1/2/3
-routing).
+tool entry point — it routes through `dispatch_model_request`
+(Case 1a cache hit / Case 1b lazy-sync) and collapses Case 2 +
+Case 3 to `UnknownModelResponse` per spec/M09 § Tool-by-tool
+Case 2 behavior (fit-checking fundamentally requires architecture
+data, so CP-only models cannot produce a defensible FitResult).
 """
 
 from __future__ import annotations

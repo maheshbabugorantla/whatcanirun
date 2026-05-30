@@ -163,11 +163,14 @@ async def budget_to_plan(
     """`budget_to_plan` MCP tool entry point — the headline.
 
     Three response shapes:
-      - `list[BudgetPlanRow]` — happy path (model known + workload supplied)
+      - `list[BudgetPlanRow]` — happy path. Case 1 (cached or
+        lazy-synced model) feeds `query_cost_cells` output through
+        `build_budget_plan`; Case 2 (CP-only model) feeds partial
+        hosted-API CostCells through the same pipeline.
       - `WorkloadElicitationResponse` — Slice M: workload_profile_slug
         omitted, server elicits rather than silently defaulting
       - `UnknownModelResponse` — Case 3: model not in tracked-models
-        catalog (Case 2 partial-cell support is M11 follow-up)
+        AND not in CP's hosted-API catalog
     """
     from whatcanirun.mcp_tools.deps import load_runtime_deps
     from whatcanirun.mcp_tools.dispatch import (
