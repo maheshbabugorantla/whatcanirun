@@ -66,6 +66,7 @@ mcp: FastMCP = FastMCP(
 # `whatcanirun/mcp_tools/` so this file stays a thin transport-layer
 # shell that wires the public surface.
 
+from whatcanirun.mcp_tools.budget_to_plan import budget_to_plan as _budget_to_plan  # noqa: E402
 from whatcanirun.mcp_tools.catalog import list_catalog as _list_catalog  # noqa: E402
 from whatcanirun.mcp_tools.compare_deployment import (  # noqa: E402
     compare_deployment_modes as _compare_deployment_modes,
@@ -79,6 +80,7 @@ mcp.tool(_list_catalog, name="list_catalog")
 mcp.tool(_fit_check, name="fit_check")
 mcp.tool(_find_cheapest_deployment, name="find_cheapest_deployment")
 mcp.tool(_compare_deployment_modes, name="compare_deployment_modes")
+mcp.tool(_budget_to_plan, name="budget_to_plan")
 
 
 def main() -> None:
