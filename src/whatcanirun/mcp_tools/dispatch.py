@@ -129,10 +129,45 @@ async def resolve_model_to_user_yaml(
     # `HfModelSync.sync_model` class method takes effect — a
     # module-top-level import binds at module load time, before
     # the test's monkeypatch fixture runs.
-    from whatcanirun.catalog.hf_sync import HfModelSync
+    from whatcanirun.catalog.hf_sync import (
+        _SAFE_REPO_ID_RE,
+        _SAFE_SLUG_RE,
+        HfModelSync,
+    )
 
     config_dir = config_dir or USER_CONFIG_DIR
     cache_dir = cache_dir or USER_CACHE_DIR
+
+    # Validate identifiers BEFORE writing user_models.yaml. The
+    # sync_model call would catch these via the same regex check,
+    # but at that point a malformed row has already been
+    # persisted — and once persisted it travels through every
+    # subsequent dispatch_model_request as a permanently-failing
+    # Case 1b candidate. Validate at the boundary so the config
+    # file can't accumulate un-syncable entries.
+    if not _SAFE_SLUG_RE.match(model_slug):
+        return ResolveModelResult(
+            model_slug=model_slug,
+            hf_repo_id=hf_repo_id,
+            status="not_found_on_hf",
+            hf_revision_sha=None,
+            error_detail=(
+                f"invalid slug {model_slug!r}: must match "
+                f"{_SAFE_SLUG_RE.pattern} "
+                "(lowercase alphanumerics + `._-`, no path separators)"
+            ),
+        )
+    if not _SAFE_REPO_ID_RE.match(hf_repo_id):
+        return ResolveModelResult(
+            model_slug=model_slug,
+            hf_repo_id=hf_repo_id,
+            status="not_found_on_hf",
+            hf_revision_sha=None,
+            error_detail=(
+                f"invalid repo_id {hf_repo_id!r}: must match HF's "
+                f"<namespace>/<name> format ({_SAFE_REPO_ID_RE.pattern})"
+            ),
+        )
 
     yaml_path = config_dir / "user_models.yaml"
     _merge_user_yaml_row(yaml_path, slug=model_slug, hf_repo_id=hf_repo_id)

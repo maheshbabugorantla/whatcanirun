@@ -261,6 +261,48 @@ def test_unknown_model_response_includes_suggested_followups() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_rejects_malformed_slug_before_yaml_write(
+    user_config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """Copilot review #15 #3: a malformed slug (path separator,
+    dot segments) must NOT land in `user_models.yaml`. If it
+    persists pre-validation, every subsequent dispatch_model_request
+    would re-attempt the doomed sync and pollute the user's
+    config with un-syncable junk."""
+    result = await resolve_model_to_user_yaml(
+        model_slug="../etc/passwd",  # path separator + traversal
+        hf_repo_id="vendor/legit",
+        config_dir=user_config_dir,
+        cache_dir=tmp_path / "cache",
+    )
+    assert result.status == "not_found_on_hf"
+    assert "invalid slug" in (result.error_detail or "")
+    # CRUCIAL: the file must NOT have been written. Even an empty
+    # file would expose the next loader to a malformed-row code path.
+    assert not (user_config_dir / "user_models.yaml").exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_rejects_malformed_repo_id_before_yaml_write(
+    user_config_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """Symmetric guard: an HF repo_id that fails the
+    `<namespace>/<name>` shape (extra slash, query string, etc.)
+    must be rejected before persisting."""
+    result = await resolve_model_to_user_yaml(
+        model_slug="my-llama",
+        hf_repo_id="vendor/name?token=stolen",  # query-string smuggling
+        config_dir=user_config_dir,
+        cache_dir=tmp_path / "cache",
+    )
+    assert result.status == "not_found_on_hf"
+    assert "invalid repo_id" in (result.error_detail or "")
+    assert not (user_config_dir / "user_models.yaml").exists()
+
+
+@pytest.mark.asyncio
 async def test_resolve_returns_sync_failed_on_http_5xx(
     user_config_dir: Path,
     monkeypatch: Any,
