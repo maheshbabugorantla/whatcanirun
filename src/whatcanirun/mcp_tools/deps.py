@@ -168,7 +168,16 @@ def load_merged_tracked_models(
     user_yaml = config_dir / "user_models.yaml"
     if not user_yaml.exists():
         return project_rows
-    raw = yaml.safe_load(user_yaml.read_text()) or []
+    # A malformed user_models.yaml (parse error, unreadable file,
+    # binary garbage) must NOT take down every tool call that
+    # loads deps. The documented contract — "drop the bad row and
+    # keep the rest functional" — extended to the whole-file case:
+    # if we can't read or parse the file at all, treat it as
+    # "no user rows" and fall back to seeds-only.
+    try:
+        raw = yaml.safe_load(user_yaml.read_text()) or []
+    except (yaml.YAMLError, OSError, UnicodeDecodeError):
+        return project_rows
     if not isinstance(raw, list):
         return project_rows
     user_rows: list[TrackedModelRow] = []
