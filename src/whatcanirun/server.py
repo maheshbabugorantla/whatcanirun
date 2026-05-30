@@ -67,8 +67,10 @@ mcp: FastMCP = FastMCP(
 # shell that wires the public surface.
 
 from whatcanirun.mcp_tools.catalog import list_catalog as _list_catalog  # noqa: E402
+from whatcanirun.mcp_tools.fit_check import fit_check as _fit_check  # noqa: E402
 
 mcp.tool(_list_catalog, name="list_catalog")
+mcp.tool(_fit_check, name="fit_check")
 
 
 def main() -> None:
