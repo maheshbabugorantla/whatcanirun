@@ -141,3 +141,10 @@
   total_params_b: 116.8
   active_params_b: 5.13
   notes: "Live-data smoke test target for M07 reasoning-effort dimension acceptance — AA tracks base + low-effort variant; -medium/-high don't exist in 2026-05-27 capture so the synthetic-data unit tests pin those branches and this row pins the (None vs low) live-data discrimination."
+
+- slug: qwen-3-coder-30b
+  hf_repo_id: Qwen/Qwen3-Coder-30B-A3B-Instruct
+  display_name: "Qwen3 Coder 30B (A3B Instruct)"
+  total_params_b: 30.5
+  active_params_b: 3.3
+  notes: "Added in M10 PR-alpha for Slice D Phase 1 coverage of code-specialized MoE. Repo ID points at the A3B Instruct release (the 'Coder' variant of Qwen3 30B that AA tracks). Total/active params approximate per the published model card; verify via HF safetensors index when M03 actually syncs the row. Mistral-Large is already at row 10 above (2411 release)."
