@@ -67,6 +67,9 @@ mcp: FastMCP = FastMCP(
 # shell that wires the public surface.
 
 from whatcanirun.mcp_tools.catalog import list_catalog as _list_catalog  # noqa: E402
+from whatcanirun.mcp_tools.compare_deployment import (  # noqa: E402
+    compare_deployment_modes as _compare_deployment_modes,
+)
 from whatcanirun.mcp_tools.find_cheapest import (  # noqa: E402
     find_cheapest_deployment as _find_cheapest_deployment,
 )
@@ -75,6 +78,7 @@ from whatcanirun.mcp_tools.fit_check import fit_check as _fit_check  # noqa: E40
 mcp.tool(_list_catalog, name="list_catalog")
 mcp.tool(_fit_check, name="fit_check")
 mcp.tool(_find_cheapest_deployment, name="find_cheapest_deployment")
+mcp.tool(_compare_deployment_modes, name="compare_deployment_modes")
 
 
 def main() -> None:
