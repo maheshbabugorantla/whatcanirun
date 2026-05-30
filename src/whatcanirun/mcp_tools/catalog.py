@@ -197,14 +197,23 @@ async def list_catalog() -> CatalogSnapshot:
     network + no warm cache + no fallback snapshot) degrades to
     an empty providers list — the other four lists remain useful
     and the empty slot is a visible signal the cache hasn't been
-    warmed yet.
+    warmed yet. The same degradation applies to `OSError` on the
+    cache directory setup or cache write (read-only container,
+    locked-down home, unwritable XDG path) — the seed-backed
+    lists stay useful even when the CP cache region is broken.
     """
     cp_cache = USER_CACHE_DIR / "computeprices"
-    cp_cache.mkdir(parents=True, exist_ok=True)
-    client = ComputePricesClient(cache_dir=cp_cache)
+    gpu_prices: list[GpuPriceRow] = []
     try:
+        cp_cache.mkdir(parents=True, exist_ok=True)
+        client = ComputePricesClient(cache_dir=cp_cache)
         gpu_prices = await client.get_gpu_prices()
-    except ComputePricesUnavailable:
+    except (ComputePricesUnavailable, OSError):
+        # CP unreachable OR the cache region is unwritable.
+        # Either way, fall through with empty gpu_prices; the
+        # other four catalog lists (gpus from supplements, models
+        # from tracked_models, quantizations, workload_profiles)
+        # are seed-backed and still load.
         gpu_prices = []
     # Pass USER_CONFIG_DIR so user-resolved models (persisted to
     # user_models.yaml by `resolve_model`) appear in the catalog
