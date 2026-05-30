@@ -170,15 +170,26 @@ async def resolve_model_to_user_yaml(
             ),
         )
 
-    yaml_path = config_dir / "user_models.yaml"
-    _merge_user_yaml_row(yaml_path, slug=model_slug, hf_repo_id=hf_repo_id)
-
+    # Sync FIRST, persist AFTER. The previous order persisted the
+    # (slug, hf_repo_id) row to user_models.yaml BEFORE confirming
+    # the sync — so a 404 / 5xx / network failure would leave a
+    # permanent un-syncable row in the user's config. That row
+    # would then re-trigger Case 1b on every subsequent tool call
+    # AND advertise the model as "supported" in list_catalog,
+    # neither of which is true. Defer the write to the success
+    # branch so a sync failure leaves the file untouched.
     sync = HfModelSync(cache_dir=cache_dir)
     import httpx
 
     sync_status: Literal["sync_failed", "not_found_on_hf"]
     try:
         model = await sync.sync_model(slug=model_slug, repo_id=hf_repo_id)
+    except asyncio.CancelledError:
+        # Propagate cancellation per spec/M09 § ADR-013 — the user
+        # disconnect signal must reach the asyncio runtime, not get
+        # swallowed by the broad `except Exception` below. No yaml
+        # write because we're abandoning the resolve attempt.
+        raise
     except httpx.HTTPStatusError as exc:
         # 404 means the repo_id is wrong or private; the user's
         # recourse is to fix the repo_id. 5xx means HF is having a
@@ -225,6 +236,25 @@ async def resolve_model_to_user_yaml(
             status="sync_failed",
             hf_revision_sha=None,
             error_detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    # Sync succeeded — NOW persist the (slug, hf_repo_id) row so
+    # future Case 1b lazy-syncs can find it. If the write itself
+    # fails (disk full, permission denied), we surface that rather
+    # than returning "resolved" with a phantom persistence claim.
+    yaml_path = config_dir / "user_models.yaml"
+    try:
+        _merge_user_yaml_row(yaml_path, slug=model_slug, hf_repo_id=hf_repo_id)
+    except OSError as exc:
+        return ResolveModelResult(
+            model_slug=model_slug,
+            hf_repo_id=hf_repo_id,
+            status="sync_failed",
+            hf_revision_sha=model.hf_revision_sha,
+            error_detail=(
+                f"sync succeeded (sha={model.hf_revision_sha}) but persisting "
+                f"to {yaml_path} failed: {type(exc).__name__}: {exc}"
+            ),
         )
 
     return ResolveModelResult(

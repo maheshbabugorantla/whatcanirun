@@ -332,6 +332,11 @@ async def test_resolve_returns_sync_failed_on_http_5xx(
     )
     assert result.status == "sync_failed"
     assert "503" in (result.error_detail or "")
+    # Sync-first ordering: the yaml MUST NOT exist after a 5xx —
+    # the previous order persisted before confirming sync, leaving
+    # an un-syncable row that would re-trigger Case 1b on every
+    # subsequent dispatch_model_request.
+    assert not (user_config_dir / "user_models.yaml").exists()
 
 
 @pytest.mark.asyncio
@@ -359,6 +364,78 @@ async def test_resolve_returns_sync_failed_on_network_error(
         cache_dir=tmp_path / "cache",
     )
     assert result.status == "sync_failed"
+    # Same sync-first guarantee: no yaml on network-layer failure.
+    assert not (user_config_dir / "user_models.yaml").exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_does_not_pollute_yaml_on_hf_404(
+    user_config_dir: Path,
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """Copilot review #15 round 5: the original ordering wrote
+    user_models.yaml BEFORE calling HfModelSync.sync_model. On a
+    404 (wrong/private repo_id) the bad mapping persisted, which
+    meant:
+      (a) list_catalog would advertise the model as supported
+          even though it can't be loaded, and
+      (b) every subsequent tool call would re-trigger Case 1b
+          lazy-sync against the bad repo_id.
+
+    The fix defers the yaml write to the success branch — a
+    404 must leave the file completely untouched."""
+    import httpx
+
+    mock = AsyncMock()
+    mock.side_effect = httpx.HTTPStatusError(
+        message="404 Not Found",
+        request=httpx.Request("GET", "https://huggingface.co/api/models/x"),
+        response=httpx.Response(404),
+    )
+    monkeypatch.setattr(
+        "whatcanirun.catalog.hf_sync.HfModelSync.sync_model",
+        mock,
+    )
+    result = await resolve_model_to_user_yaml(
+        model_slug="non-existent-model",
+        hf_repo_id="vendor/does-not-exist",
+        config_dir=user_config_dir,
+        cache_dir=tmp_path / "cache",
+    )
+    assert result.status == "not_found_on_hf"
+    assert "404" in (result.error_detail or "")
+    # The crucial assertion: NO persistence on the failure path.
+    assert not (user_config_dir / "user_models.yaml").exists(), (
+        "404 left an un-syncable row in user_models.yaml — list_catalog "
+        "would advertise it as supported and every tool call would "
+        "re-attempt the doomed Case 1b sync"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_persists_yaml_only_after_sync_succeeds(
+    user_config_dir: Path,
+    stub_sync_success: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Order-of-operations regression: on the success path the
+    yaml DOES get written (and contains the resolved row).
+    Together with the 404 / 5xx / network tests above, this pins
+    the contract: yaml-on-success, no-yaml-on-failure."""
+    import yaml
+
+    result = await resolve_model_to_user_yaml(
+        model_slug="my-llama",
+        hf_repo_id="vendor/My-Llama",
+        config_dir=user_config_dir,
+        cache_dir=tmp_path / "cache",
+    )
+    assert result.status == "resolved"
+    user_yaml = user_config_dir / "user_models.yaml"
+    assert user_yaml.exists()
+    rows = yaml.safe_load(user_yaml.read_text())
+    assert any(r["slug"] == "my-llama" and r["hf_repo_id"] == "vendor/My-Llama" for r in rows)
 
 
 def test_resolve_model_registered_as_mcp_tool() -> None:
