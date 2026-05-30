@@ -19,7 +19,7 @@ Critical path = 8 weekends at ~6h each (~54h implementation-only). Plan for **75
 | M06 | [fit_check](M06-fit-check.md) | 4h | ✓ | ✓ |
 | M07 | [tps_estimator](M07-tps-estimator.md) | 4h | ✓ | ✓ |
 | M08 | [Cost cells join layer](M08-cost-cells.md) | 3h | ✓ | ✓ |
-| M09 | [MCP server](M09-mcp-server.md) | 10h | ✓ | ⬜ |
+| M09 | [MCP server](M09-mcp-server.md) | 10h | ✓ | ✓ |
 | M10 | [Benchmark seeds (public sources)](M10-benchmark-seeds.md) | 6h | parallel | ⬜ |
 | M11 | [Tests + golden-path + docs](M11-tests-docs.md) | 6h | ✓ | ⬜ |
 | M12 | [Release](M12-release.md) | 3h | ✓ | ⬜ |

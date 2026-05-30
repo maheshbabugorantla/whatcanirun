@@ -55,7 +55,7 @@ In code, tests, commit messages, PR titles, issue bodies. Consistency reduces co
 
 - **Cost cell** — `(gpu, provider, model, quant, deployment_mode, batch, ctx) → (hourly_usd, decode_tps, cost_per_m_output_usd, trust_envelope)`. Atomic output unit.
 - **Trust envelope** — Pydantic model carrying source provenance, calibrated confidence by domain, assumptions, caveats, freshness, audit links.
-- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`.
+- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `workload_assumption`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`. `workload_assumption` is populated ONLY on responses that synthesize a derived count from a workload profile (e.g. `BudgetPlanRow.est_total_prompts`); omit the key otherwise.
 - **Deployment mode** — `cloud_gpu_rental`, `hosted_api_token`. (v2 adds `on_prem` with `tco_treatment` subfield.)
 - **Op-point** — `(batch_size, context_length)` tuple.
 - **Fit check** — Pure-math VRAM verdict. Returns FitResult with `weight_gb`, `kv_cache_gb`, `framework_overhead_gb`, `headroom_gb`, `blocking_reasons`, `sufficiency_caveat`. Never just a bool.
@@ -128,3 +128,40 @@ In order of preference:
 ## Last reminder
 
 The trust contract is the product. Every shortcut that compromises honesty in tool output destroys the only thing that differentiates this project from a one-weekend GPU price comparison site. When in doubt: surface the caveat, lower the confidence, expose the assumption.
+
+---
+
+## Compact Instructions
+
+This file auto-reloads when Claude Code compacts the conversation. Items below must survive compaction — they are the operational invariants the rest of this file expands on, plus pointers to specs that do NOT auto-load.
+
+**Trust contract (non-negotiable):**
+- Every numerical tool output carries a `TrustEnvelope` with `sources`, `confidence_breakdown`, `assumptions`, `caveats`, `freshness`, `verify_links`. No exceptions.
+- `confidence = min(confidence_breakdown.values())` — weakest-link rule, never an average.
+- `workload_assumption` domain appears ONLY on responses that synthesize a derived count from a workload profile; omit the key otherwise.
+
+**Locked ADRs to honor:**
+- **ADR-007:** v1 transport is stdio only — no remote HTTP, no auth.
+- **ADR-008:** v1 stack is FastMCP + Pydantic + httpx + DuckDB-on-files — no Django, no SQL DB.
+- **ADR-010:** TPS heuristic is single-stream only (batch=1); batch>1 returns `requires_measurement` unless a measured benchmark cell exists.
+- **ADR-013:** When ComputePrices is unreachable, serve last-good local snapshot — never fail tool calls outright.
+- **ADR-014:** Cost-cells tool path is plain-Python list joins; DuckDB is reserved for `cost-cells://current` resource materialization. Enforced by an AST grep test.
+- **ADR-015:** Raw + projection storage. Upstream payloads stored verbatim; nested evolving objects typed as `dict[str, Any]` or `dict[str, float | None]`, never narrow-typed.
+
+**TPS source enum (locked, never confuse):**
+`own_measured | public_benchmark_anchor | provider_anchor | bandwidth_heuristic_single_stream | requires_measurement`. v1 never returns `own_measured` — we have no own benchmarks yet.
+
+**Spec files that do NOT auto-load** (read them before substantive work in their area):
+- [`spec/SHARED.md`](spec/SHARED.md) — § Trust Contract, § Calibration (per-domain confidence values), § Staleness policy (freshness decay curve)
+- [`spec/M{NN}-*.md`](spec/INDEX.md) — current milestone acceptance criteria + vertical slice list
+
+**Commit hygiene (per `story-commit` skill):**
+- Invoke the `story-commit` skill via the Skill tool before any `git commit -m`.
+- Never include `Co-Authored-By` trailers unless the user explicitly asks.
+- Never `git add -A` / `git add .` — stage specific files by name.
+- Never amend, never force-push, never skip pre-commit hooks.
+
+**Memory rules to consult** at `~/.claude/projects/-workspace/memory/MEMORY.md`:
+- `feedback-merge-authorization` — never merge a PR without explicit per-PR "ship it" from the user.
+- `feedback-review-before-push` and `feedback-review-during-copilot-wait` — run `/review` + `/security-review` before every push and after every fix commit.
+- `feedback-branching` — milestone work goes on a dedicated branch; never on main.
