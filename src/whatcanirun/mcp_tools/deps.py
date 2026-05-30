@@ -225,32 +225,53 @@ async def load_runtime_deps(
     bench_cells_path = seeds_dir / "benchmark_cells.parquet"
     bench_cells = load_benchmark_cells(bench_cells_path) if bench_cells_path.exists() else []
 
-    # CP cache reads — graceful degradation on unreachable cache.
-    cp_cache = cache_dir / "computeprices"
-    cp_cache.mkdir(parents=True, exist_ok=True)
-    cp_client = ComputePricesClient(cache_dir=cp_cache)
-
-    async def _fetch_or_empty[T](fn: Any) -> list[T]:
-        """Call the CP endpoint; degrade to empty list on
-        ComputePricesUnavailable so a cold cache + no-network
-        environment doesn't take down every tool call."""
-        try:
-            return await fn()  # type: ignore[no-any-return]
-        except ComputePricesUnavailable:
-            return []
-
-    gpu_prices: list[GpuPriceRow] = await _fetch_or_empty(cp_client.get_gpu_prices)
-    llm_prices: list[LlmPriceRow] = await _fetch_or_empty(cp_client.get_llm_prices)
-    gpu_catalog: list[GpuCatalogRow] = await _fetch_or_empty(cp_client.get_gpu_catalog)
-    llm_catalog: list[LlmCatalogRow] = await _fetch_or_empty(cp_client.get_llm_catalog)
-
-    # Per-endpoint `meta.generated_at` for the freshness domain.
-    # `get_raw_response` shares the cache so this is free for warm
-    # endpoints; unreachable endpoints stay at datetime.min so the
-    # freshness_confidence curve maps them to the lowest band.
+    # CP cache reads — graceful degradation on:
+    #   - unreachable CP / cold cache (ComputePricesUnavailable)
+    #   - read-only or unwritable cache dir (OSError on mkdir or
+    #     on the cache write inside ComputePricesClient methods)
+    # Either failure mode collapses to empty CP lists. The HF
+    # model_catalog + seed-backed lists still load, so the user
+    # can keep querying for models we have full data on; CP-only
+    # / Case 2 paths fall through to UnknownModelResponse.
     epoch = dt.datetime.min.replace(tzinfo=dt.UTC)
-    gpu_catalog_ts = await _meta_generated_at(cp_client, "gpus") or epoch
-    llm_prices_ts = await _meta_generated_at(cp_client, "llm-prices") or epoch
+    cp_cache = cache_dir / "computeprices"
+    gpu_prices: list[GpuPriceRow] = []
+    llm_prices: list[LlmPriceRow] = []
+    gpu_catalog: list[GpuCatalogRow] = []
+    llm_catalog: list[LlmCatalogRow] = []
+    gpu_catalog_ts = epoch
+    llm_prices_ts = epoch
+
+    try:
+        cp_cache.mkdir(parents=True, exist_ok=True)
+        cp_client = ComputePricesClient(cache_dir=cp_cache)
+
+        async def _fetch_or_empty[T](fn: Any) -> list[T]:
+            """Call the CP endpoint; degrade to empty list on
+            ComputePricesUnavailable OR OSError (e.g. cache write
+            denied) so a no-network or read-only environment
+            doesn't take down every tool call."""
+            try:
+                return await fn()  # type: ignore[no-any-return]
+            except (ComputePricesUnavailable, OSError):
+                return []
+
+        gpu_prices = await _fetch_or_empty(cp_client.get_gpu_prices)
+        llm_prices = await _fetch_or_empty(cp_client.get_llm_prices)
+        gpu_catalog = await _fetch_or_empty(cp_client.get_gpu_catalog)
+        llm_catalog = await _fetch_or_empty(cp_client.get_llm_catalog)
+
+        # Per-endpoint `meta.generated_at` for the freshness domain.
+        # `get_raw_response` shares the cache so this is free for warm
+        # endpoints; unreachable endpoints stay at datetime.min so the
+        # freshness_confidence curve maps them to the lowest band.
+        gpu_catalog_ts = await _meta_generated_at(cp_client, "gpus") or epoch
+        llm_prices_ts = await _meta_generated_at(cp_client, "llm-prices") or epoch
+    except OSError:
+        # mkdir failed — the whole CP cache region is unwritable.
+        # Skip every CP fetch (none of the dependent code below
+        # has run). Fall through with the empty defaults set above.
+        pass
 
     model_catalog = _load_hf_model_cache(cache_dir)
     tracked_models = load_merged_tracked_models(seeds_dir=seeds_dir, config_dir=config_dir)
