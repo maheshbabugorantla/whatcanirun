@@ -55,7 +55,7 @@ In code, tests, commit messages, PR titles, issue bodies. Consistency reduces co
 
 - **Cost cell** — `(gpu, provider, model, quant, deployment_mode, batch, ctx) → (hourly_usd, decode_tps, cost_per_m_output_usd, trust_envelope)`. Atomic output unit.
 - **Trust envelope** — Pydantic model carrying source provenance, calibrated confidence by domain, assumptions, caveats, freshness, audit links.
-- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`.
+- **Confidence domain** — One of: `pricing`, `fit_check`, `throughput`, `model_architecture`, `gpu_specs`, `workload_assumption`, `freshness`. Top-level `confidence` is `min(confidence_breakdown.values())`. `workload_assumption` is populated ONLY on responses that synthesize a derived count from a workload profile (e.g. `BudgetPlanRow.est_total_prompts`); omit the key otherwise.
 - **Deployment mode** — `cloud_gpu_rental`, `hosted_api_token`. (v2 adds `on_prem` with `tco_treatment` subfield.)
 - **Op-point** — `(batch_size, context_length)` tuple.
 - **Fit check** — Pure-math VRAM verdict. Returns FitResult with `weight_gb`, `kv_cache_gb`, `framework_overhead_gb`, `headroom_gb`, `blocking_reasons`, `sufficiency_caveat`. Never just a bool.
