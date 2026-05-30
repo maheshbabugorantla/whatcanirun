@@ -455,16 +455,25 @@ async def test_user_asks_about_unknown_model_then_supplies_repo_id(
     server_cold: Path,
 ) -> None:
     """User: 'how much would it cost to run my-fine-tuned-llama?'
-    Server doesn't have it cached. The full unknown-model loop:
+    Server doesn't have it cached. This test verifies the loading
+    half of the unknown-model loop and the persistence contract:
 
     1. fit_check → UnknownModelResponse asking for hf_repo_id
     2. Client elicits from user
-    3. resolve_model persists + (stubbed) syncs the config
-    4. fit_check re-called succeeds with a real envelope
+    3. resolve_model persists + (stubbed) syncs the config; the
+       test asserts BOTH halves of the persistence side effect
+       (user_models.yaml row exists AND huggingface/<slug>.model
+       .json cache entry exists) so a regression returning
+       status="resolved" without actually persisting can't pass.
 
-    This is the spec's Case 3 happy resolution — without it the
-    server would just be a 'sorry, model not supported' wall to
-    every user with a custom fine-tune."""
+    A Turn 4 fit_check retry is NOT exercised here: the
+    `server_cold` fixture sets `cp_offline`, so the retry would
+    raise on gpu_catalog lookup for an unrelated reason (no GPU
+    catalog) before exercising the just-resolved model. The
+    `test_user_asks_about_seeds_tracked_model_with_cold_hf_cache`
+    integration test below covers the analogous lazy-sync-then-
+    use path with a warm-CP fixture, which is the correct
+    fixture choice for that assertion."""
     async with Client(transport=mcp) as client:
         # Turn 1: unknown model.
         first = await client.call_tool(
