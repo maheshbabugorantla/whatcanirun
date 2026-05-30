@@ -148,22 +148,42 @@ _PROVENANCE = {
 }
 
 
-def render_current_cost_cells() -> bytes:
+async def render_current_cost_cells() -> bytes:
     """Resource handler for `cost-cells://current`.
 
     Materializes all current cost cells as Parquet via M08's
-    `render_cost_cells_resource`. The cache-fetching plumbing is
-    Slice L's job — until that lands, this handler renders an
-    empty table with the documented schema so the resource is
-    available and well-formed from day one.
+    `render_cost_cells_resource`. Loads every contributing cache
+    (CP prices/catalog, HF model catalog, seed quantizations +
+    bench cells) through `load_runtime_deps` so warm caches
+    actually populate the parquet payload — the resource matches
+    its spec name (`current`, not `empty`).
+
+    Per ADR-013, the resource MUST NOT fail the read on cache
+    failure. `load_runtime_deps` already catches
+    `ComputePricesUnavailable` and returns empty lists for the
+    affected upstream; this handler additionally catches any
+    other exception (e.g. HF disk corruption, an unexpected
+    httpx error class that escaped M02's wrapper) and degrades
+    to the same empty-but-well-formed parquet table the cold-
+    cache path emits. The client always gets a valid parquet
+    response.
     """
+    from whatcanirun.mcp_tools.deps import RuntimeDeps, load_runtime_deps
+
+    try:
+        deps = await load_runtime_deps()
+    except Exception:
+        # Any escape from load_runtime_deps (HF cache corruption,
+        # an httpx error class M02 didn't wrap, etc.) collapses
+        # to an empty render rather than a failed resource read.
+        deps = RuntimeDeps()
     return render_cost_cells_resource(
-        gpu_prices=[],
-        llm_prices=[],
-        gpu_catalog=[],
-        model_catalog=[],
-        quantizations=[],
-        bench_cells=[],
+        gpu_prices=deps.gpu_prices,
+        llm_prices=deps.llm_prices,
+        gpu_catalog=deps.gpu_catalog,
+        model_catalog=deps.model_catalog,
+        quantizations=deps.quantizations,
+        bench_cells=deps.bench_cells,
         aa_observations=None,
     )
 

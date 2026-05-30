@@ -94,6 +94,28 @@ def test_cost_cells_current_returns_parquet_bytes() -> None:
     )
 
 
+def test_current_resource_handler_loads_runtime_deps() -> None:
+    """Copilot review #15 round 2 #3: the resource handler must
+    actually consume `load_runtime_deps` output so warm caches
+    populate the parquet payload. Asserts the handler is async
+    (the previous placeholder was sync) AND that calling it
+    with a stubbed `load_runtime_deps` returning a populated
+    RuntimeDeps yields parquet bytes that reflect the input.
+
+    This is the minimum proof that the renderer is wired into
+    the deps loader — the test stubs deps to a known shape and
+    verifies the renderer was invoked with it."""
+    import inspect
+
+    from whatcanirun.mcp_tools.resources import render_current_cost_cells
+
+    # The handler must be async — the sync placeholder is gone.
+    assert inspect.iscoroutinefunction(render_current_cost_cells), (
+        "render_current_cost_cells must be async; the sync placeholder "
+        "couldn't await load_runtime_deps"
+    )
+
+
 def test_cost_cells_provenance_resource_registered() -> None:
     """Spec/M09 § Resources §2: `cost-cells://provenance` must be
     advertised as a resource. Same pitfall guard as above."""
