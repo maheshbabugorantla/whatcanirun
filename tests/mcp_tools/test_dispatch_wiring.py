@@ -82,8 +82,13 @@ async def test_fit_check_returns_unknown_for_uncached_model(
 async def test_find_cheapest_returns_unknown_for_uncached_model(
     empty_deps: RuntimeDeps,
 ) -> None:
-    """find_cheapest_deployment routes uncached models to Case 3
-    too (Case 2 partial-CostCell support is M11 follow-up)."""
+    """find_cheapest_deployment routes uncached models that
+    aren't in CP's hosted-API catalog either through to Case 3
+    (UnknownModelResponse). When the model IS in CP's catalog
+    but not in our tracked-models set, Case 2 partial-cell
+    construction kicks in instead — that branch is covered by
+    the integration test
+    `test_user_asks_about_cp_only_model_for_pricing`."""
     from whatcanirun.mcp_tools.find_cheapest import find_cheapest_deployment
 
     result = await find_cheapest_deployment(model_slug="mystery-model", top_n=3)
