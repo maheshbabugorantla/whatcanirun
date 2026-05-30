@@ -19,10 +19,9 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-/workspace}"
 sentinel="${PROJECT_DIR}/.claude/.compact-pending"
 
 [[ -f "$sentinel" ]] || exit 0
-command -v jq >/dev/null 2>&1 || { rm -f "$sentinel"; exit 0; }
+command -v jq >/dev/null 2>&1 || exit 0  # leave sentinel for next run
 
 milestone=$(head -1 "$sentinel" 2>/dev/null || echo "unknown")
-rm -f "$sentinel"  # clear AFTER reading so we surface exactly once
 
 ctx=$(cat <<EOF
 Milestone ${milestone} was marked complete in a recent commit
@@ -33,11 +32,18 @@ in your response if the user hasn't already run it.
 EOF
 )
 
-jq -n --arg ctx "$ctx" '{
+# Render the additionalContext JSON FIRST. Only on successful
+# render do we clear the sentinel — guarantees "fires exactly
+# once on successful delivery" rather than "fires at most once on
+# invocation". A jq runtime failure (OOM, corrupted binary)
+# leaves the sentinel in place so the next prompt retries.
+output=$(jq -n --arg ctx "$ctx" '{
   hookSpecificOutput: {
     hookEventName: "UserPromptSubmit",
     additionalContext: $ctx
   }
-}'
+}') || exit 0
 
+rm -f "$sentinel"
+printf '%s\n' "$output"
 exit 0
