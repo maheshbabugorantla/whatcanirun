@@ -9,6 +9,11 @@
 #     in progress vs done)
 #   - the active branch + last 5 commits (so post-compact knows
 #     where the in-progress work lives)
+#   - the pre-compact snapshot file (.claude/.pre-compact-snapshot.md)
+#     written by the PreCompact hook, if present. Carries
+#     in-flight session state — locked decisions, last assistant
+#     messages, recent tool calls, open PRs — that would otherwise
+#     be lost in the compaction summary.
 #
 # Returns JSON on stdout per the Claude Code hooks contract:
 #   {"hookSpecificOutput":{"hookEventName":"SessionStart",
@@ -38,6 +43,17 @@ branch=""
 if git -C "${PROJECT_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
   branch=$(git -C "${PROJECT_DIR}" branch --show-current 2>/dev/null || echo "")
   recent=$(git -C "${PROJECT_DIR}" log --oneline -5 2>/dev/null || echo "")
+fi
+
+# Pre-compact snapshot, written by save-context-before-compact.sh
+# (the PreCompact hook). Read once and unlink so a stale snapshot
+# from a prior compaction can't masquerade as fresh on a later
+# session restart. Missing file is fine — degrade silently.
+snapshot=""
+snapshot_path="${PROJECT_DIR}/.claude/.pre-compact-snapshot.md"
+if [[ -f "$snapshot_path" ]]; then
+  snapshot=$(cat "$snapshot_path" 2>/dev/null || echo "")
+  rm -f "$snapshot_path"
 fi
 
 # --- Compose the additional-context block.
@@ -72,6 +88,11 @@ ${shared:-<spec/SHARED.md not found>}
 
 Reminder: \`spec/M{NN}-*.md\` files are NOT auto-injected. Read
 the active milestone's file before substantive work in its area.
+
+${snapshot:+### Pre-compact snapshot (in-flight state)
+
+${snapshot}
+}
 EOF
 )
 
