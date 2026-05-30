@@ -246,11 +246,22 @@ async def resolve_model_to_user_yaml(
     try:
         _merge_user_yaml_row(yaml_path, slug=model_slug, hf_repo_id=hf_repo_id)
     except OSError as exc:
+        # Persistence failed AFTER a successful HF sync (disk full,
+        # permission denied, etc.). Keep status="sync_failed" to
+        # stay within the documented 3-status enum, but null the
+        # `hf_revision_sha` so the {status, sha} pair stays
+        # internally consistent — a non-null SHA paired with
+        # status="sync_failed" would have an LLM client trying
+        # to retry sync when the real recourse is "check disk
+        # state". The error_detail captures the actual cause
+        # (sync did succeed; only the write failed) so the client
+        # can still relay it accurately. A v2 schema bump could
+        # introduce a dedicated `persistence_failed` status.
         return ResolveModelResult(
             model_slug=model_slug,
             hf_repo_id=hf_repo_id,
             status="sync_failed",
-            hf_revision_sha=model.hf_revision_sha,
+            hf_revision_sha=None,
             error_detail=(
                 f"sync succeeded (sha={model.hf_revision_sha}) but persisting "
                 f"to {yaml_path} failed: {type(exc).__name__}: {exc}"
