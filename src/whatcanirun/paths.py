@@ -49,6 +49,16 @@ def _resolve_seeds_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "seeds"
 
 
+# `SEEDS_DIR` is evaluated at import time. Any module that does
+# `from whatcanirun.paths import SEEDS_DIR` caches the value at
+# its own import. A test that sets `WHATCANIRUN_SEEDS_DIR` AFTER
+# the consumer has imported `SEEDS_DIR` won't see the override.
+# Tests redirecting seeds should either (a) call
+# `_resolve_seeds_dir()` directly (the pattern in
+# `tests/test_paths.py`), (b) monkeypatch each consumer's bound
+# `SEEDS_DIR` (the pattern integration tests use via
+# `_redirect_xdg`), or (c) set the env var BEFORE any whatcanirun
+# module is imported.
 SEEDS_DIR = _resolve_seeds_dir()
 
 
