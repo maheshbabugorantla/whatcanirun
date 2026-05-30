@@ -184,10 +184,11 @@ def query_cost_cells(
 
             for model in models_to_consider:
                 if model.total_params_b is None:
-                    # Per ADR-010, models with unknown total_params
-                    # route to requires_measurement upstream. M08
-                    # treats them the same — no cell at all rather
-                    # than a partial one with None weight math.
+                    # Without total_params_b we can't compute weight
+                    # bytes, so fit_check has nothing to compare
+                    # against VRAM. Skip rather than emit a partial
+                    # cell — M09's `budget_to_plan` surfaces the
+                    # data gap via its workload-elicitation flow.
                     continue
 
                 for quant in quants_to_consider:
@@ -298,11 +299,11 @@ def query_cost_cells(
                 continue
             if filters.model_slug is not None and llm_price.model_slug != filters.model_slug:
                 continue
-            # NB: we don't need the Model for hosted_api_token —
-            # provider runs the weights. We still look it up via
-            # `model_by_slug.get(...)` ONLY when v1 grows a need
-            # for it (e.g. surfacing model_creator in the trust
-            # envelope). For now it's intentionally unused.
+            # No Model lookup here — the provider runs the weights,
+            # so we don't need n_layers / n_kv_heads / head_dim /
+            # any of M06's inputs. If a future v1 row needs Model
+            # metadata (e.g. model_creator on the trust envelope),
+            # add the lookup THEN — not pre-emptively.
 
             # No fit_check, no tps math — hosted API doesn't load
             # weights into OUR VRAM. Per spec § Common pitfalls:
