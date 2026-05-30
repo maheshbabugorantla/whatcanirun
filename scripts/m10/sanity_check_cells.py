@@ -23,6 +23,8 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from whatcanirun.catalog.benchmark_cells import BenchmarkCell
+from whatcanirun.catalog.seed_schemas import Quantization, TrackedModelRow
+from whatcanirun.pricing.projections import GpuCatalogRow
 
 # Stale-numbers threshold per spec's "Stale numbers" pitfall: a cell
 # from 2024 with vLLM 0.4 is less applicable to 2026 stacks. 18 months
@@ -48,13 +50,29 @@ class CheckResult:
 
 @dataclass(frozen=True)
 class CheckContext:
-    """Side-data the catalog-aware checks need. Grows as later
-    cycles land catalog-join checks (gpu_catalog, quantizations,
-    tracked_models go here next). Frozen so a single context can
-    be threaded safely across every cell in a candidate file
-    without checks mutating shared state."""
+    """Side-data the catalog-aware checks need. Frozen so a single
+    context can be threaded safely across every cell in a candidate
+    file without checks mutating shared state.
+
+    Fields:
+    - `existing_cells` — the canonical parquet's current rows, used
+      by `check_op_point_unique` (cycle 5) and
+      `check_batch_scaling_not_linear` (cycle 10).
+    - `gpu_catalog` — CP's gpu_catalog rows, used by
+      `check_gpu_slug_exists` (cycle 6) and
+      `check_gpu_form_factor_disambiguated` (cycle 9).
+    - `quantizations` — seed quantizations, used by
+      `check_quant_slug_exists` (cycle 7) and the MoE-aware
+      bandwidth heuristic (cycle 11) for bits_per_weight.
+    - `tracked_models` — merged tracked-models (project seed +
+      user_models.yaml), used by `check_model_slug_exists`
+      (cycle 8) and cycle 11 for active_params_b / total_params_b
+      lookups."""
 
     existing_cells: list[BenchmarkCell]
+    gpu_catalog: list[GpuCatalogRow]
+    quantizations: list[Quantization]
+    tracked_models: list[TrackedModelRow]
 
 
 # ---------------------------------------------------------------- checks
@@ -210,3 +228,68 @@ def check_op_point_unique(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult
                 ),
             )
     return CheckResult(severity="pass", message=f"op-point {key!r} is new to the parquet")
+
+
+def check_gpu_slug_exists(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult:
+    """`cell.gpu_slug` must resolve to a row in CP's gpu_catalog.
+    Without an exact match, tps_estimator Tier 1b can't join the
+    cell to a real GPU's bandwidth + form factor - the row is dead
+    data. An empty catalog is also a blocking error (better to fail
+    loud than silently pass every slug)."""
+    known = {row.slug for row in ctx.gpu_catalog}
+    if cell.gpu_slug not in known:
+        return CheckResult(
+            severity="error",
+            message=(
+                f"gpu_slug {cell.gpu_slug!r} does not resolve in CP's "
+                f"gpu_catalog (known slugs: {sorted(known)[:5]}...). "
+                f"Verify the slug matches CP's `gpus` endpoint."
+            ),
+        )
+    return CheckResult(
+        severity="pass", message=f"gpu_slug {cell.gpu_slug!r} resolves in gpu_catalog"
+    )
+
+
+def check_quant_slug_exists(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult:
+    """`cell.quant_slug` must resolve to a row in
+    `seeds/quantizations.yaml`. Without that, fit_check can't get
+    `bits_per_weight` and tps_estimator can't compute memory
+    traffic. Blocking error."""
+    known = {q.slug for q in ctx.quantizations}
+    if cell.quant_slug not in known:
+        return CheckResult(
+            severity="error",
+            message=(
+                f"quant_slug {cell.quant_slug!r} does not resolve in "
+                f"seeds/quantizations.yaml (known slugs: {sorted(known)}). "
+                f"Add the quantization to the YAML before adding cells "
+                f"that reference it."
+            ),
+        )
+    return CheckResult(
+        severity="pass", message=f"quant_slug {cell.quant_slug!r} resolves in quantizations"
+    )
+
+
+def check_model_slug_exists(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult:
+    """`cell.model_slug` must resolve to a row in merged tracked_models
+    (project seed + user_models.yaml). Without that, HfModelSync
+    can't find the HF repo and the cell's join keys are stranded.
+    Blocking error; message hints at the fix path."""
+    known = {row.slug for row in ctx.tracked_models}
+    if cell.model_slug not in known:
+        return CheckResult(
+            severity="error",
+            message=(
+                f"model_slug {cell.model_slug!r} does not resolve in "
+                f"merged tracked_models. Add an entry to "
+                f"seeds/tracked_models.yaml (or user_models.yaml) "
+                f"mapping the slug to its HF repo_id before adding "
+                f"cells that reference it."
+            ),
+        )
+    return CheckResult(
+        severity="pass",
+        message=f"model_slug {cell.model_slug!r} resolves in tracked_models",
+    )

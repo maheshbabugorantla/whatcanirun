@@ -20,13 +20,66 @@ from scripts.m10.sanity_check_cells import (
     CheckContext,
     CheckResult,
     check_engine_version_format,
+    check_gpu_slug_exists,
     check_measured_at_recency,
     check_methodology_complete,
+    check_model_slug_exists,
     check_op_point_unique,
+    check_quant_slug_exists,
     check_source_url_well_formed,
 )
 
 from whatcanirun.catalog.benchmark_cells import BenchmarkCell
+from whatcanirun.catalog.seed_schemas import Quantization, TrackedModelRow
+from whatcanirun.pricing.projections import GpuCatalogRow
+
+
+def _gpu(slug: str = "h100") -> GpuCatalogRow:
+    """Minimal GpuCatalogRow for join tests."""
+    return GpuCatalogRow(
+        slug=slug,
+        name=slug.upper(),
+        manufacturer="NVIDIA",
+        architecture="hopper",
+        vram_gb=80,
+        release_date=None,
+        specs={"memory_bandwidth_gbps": 3350.0},
+    )
+
+
+def _quant(slug: str = "bf16", bits: int = 16) -> Quantization:
+    """Minimal Quantization for join tests."""
+    return Quantization(
+        slug=slug,
+        bits_per_weight=bits,
+        kv_cache_bits_default=16,
+        introduced_architecture="ampere",
+        notes="seed test quant",
+    )
+
+
+def _tracked(slug: str = "llama-3-1-8b", hf_repo_id: str | None = None) -> TrackedModelRow:
+    """Minimal TrackedModelRow for join tests."""
+    return TrackedModelRow(
+        slug=slug,
+        hf_repo_id=hf_repo_id or f"meta-llama/{slug}",
+    )
+
+
+def _ctx(
+    existing_cells: list[BenchmarkCell] | None = None,
+    gpu_catalog: list[GpuCatalogRow] | None = None,
+    quantizations: list[Quantization] | None = None,
+    tracked_models: list[TrackedModelRow] | None = None,
+) -> CheckContext:
+    """Builds a CheckContext with sensible defaults. Tests override
+    only the field they're exercising."""
+    return CheckContext(
+        existing_cells=existing_cells if existing_cells is not None else [],
+        gpu_catalog=gpu_catalog if gpu_catalog is not None else [_gpu()],
+        quantizations=quantizations if quantizations is not None else [_quant()],
+        tracked_models=tracked_models if tracked_models is not None else [_tracked()],
+    )
 
 
 def _valid_cell(**overrides: Any) -> BenchmarkCell:
@@ -272,7 +325,7 @@ class TestOpPointUnique:
     def test_unique_op_point_passes(self) -> None:
         cell = _valid_cell(gpu_slug="h200", model_slug="llama-3-3-70b", quant_slug="fp8")
         existing = [_valid_cell(gpu_slug="h100", model_slug="llama-3-3-70b", quant_slug="fp8")]
-        ctx = CheckContext(existing_cells=existing)
+        ctx = _ctx(existing_cells=existing)
         result = check_op_point_unique(cell, ctx)
         assert result.severity == "pass"
 
@@ -296,7 +349,7 @@ class TestOpPointUnique:
                 decode_tps=999.0,
             )
         ]
-        ctx = CheckContext(existing_cells=existing)
+        ctx = _ctx(existing_cells=existing)
         result = check_op_point_unique(cell, ctx)
         assert result.severity == "error"
         assert "op-point" in result.message.lower() or "duplicate" in result.message.lower()
@@ -306,16 +359,102 @@ class TestOpPointUnique:
         # different batch is a legitimate new op-point.
         cell = _valid_cell(batch_size=8)
         existing = [_valid_cell(batch_size=1)]
-        ctx = CheckContext(existing_cells=existing)
+        ctx = _ctx(existing_cells=existing)
         result = check_op_point_unique(cell, ctx)
         assert result.severity == "pass"
 
     def test_empty_existing_passes(self) -> None:
         # First-ever cell with that op-point.
         cell = _valid_cell()
-        ctx = CheckContext(existing_cells=[])
+        ctx = _ctx(existing_cells=[])
         result = check_op_point_unique(cell, ctx)
         assert result.severity == "pass"
+
+
+# ---------------------------------------------------------------- check_gpu_slug_exists
+
+
+class TestGpuSlugExists:
+    """Cell's gpu_slug must resolve to a row in CP's `gpu_catalog`.
+    Without an exact match, tps_estimator Tier 1b can't join the
+    cell to a real GPU's bandwidth + form factor — the row is dead
+    data."""
+
+    def test_known_gpu_passes(self) -> None:
+        cell = _valid_cell(gpu_slug="h100")
+        ctx = _ctx(gpu_catalog=[_gpu("h100"), _gpu("a100")])
+        result = check_gpu_slug_exists(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_unknown_gpu_errors(self) -> None:
+        cell = _valid_cell(gpu_slug="rtx-9090")
+        ctx = _ctx(gpu_catalog=[_gpu("h100")])
+        result = check_gpu_slug_exists(cell, ctx)
+        assert result.severity == "error"
+        assert "gpu_slug" in result.message
+        assert "rtx-9090" in result.message
+
+    def test_empty_catalog_errors(self) -> None:
+        # Edge case: catalog hasn't been loaded; better to fail loud
+        # than silently pass every gpu_slug.
+        cell = _valid_cell(gpu_slug="h100")
+        ctx = _ctx(gpu_catalog=[])
+        result = check_gpu_slug_exists(cell, ctx)
+        assert result.severity == "error"
+
+
+# ---------------------------------------------------------------- check_quant_slug_exists
+
+
+class TestQuantSlugExists:
+    """Cell's quant_slug must resolve to a row in
+    `seeds/quantizations.yaml`. Without that, fit_check can't get
+    `bits_per_weight` and tps_estimator can't compute memory traffic."""
+
+    def test_known_quant_passes(self) -> None:
+        cell = _valid_cell(quant_slug="fp8")
+        ctx = _ctx(quantizations=[_quant("fp8", 8), _quant("bf16", 16)])
+        result = check_quant_slug_exists(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_unknown_quant_errors(self) -> None:
+        cell = _valid_cell(quant_slug="int3")  # not a real quant
+        ctx = _ctx(quantizations=[_quant("fp8", 8)])
+        result = check_quant_slug_exists(cell, ctx)
+        assert result.severity == "error"
+        assert "quant_slug" in result.message
+        assert "int3" in result.message
+
+
+# ---------------------------------------------------------------- check_model_slug_exists
+
+
+class TestModelSlugExists:
+    """Cell's model_slug must resolve to a row in merged
+    tracked_models (project seed + user_models.yaml). Without that,
+    HfModelSync can't find the HF repo and the cell's join keys
+    are stranded."""
+
+    def test_known_model_passes(self) -> None:
+        cell = _valid_cell(model_slug="llama-3-1-8b")
+        ctx = _ctx(
+            tracked_models=[
+                _tracked("llama-3-1-8b"),
+                _tracked("mistral-7b"),
+            ]
+        )
+        result = check_model_slug_exists(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_unknown_model_errors(self) -> None:
+        cell = _valid_cell(model_slug="mistral-large")  # not yet in tracked_models
+        ctx = _ctx(tracked_models=[_tracked("llama-3-1-8b")])
+        result = check_model_slug_exists(cell, ctx)
+        assert result.severity == "error"
+        assert "model_slug" in result.message
+        assert "mistral-large" in result.message
+        # The error should hint at the resolution path: add to tracked_models.
+        assert "tracked_models" in result.message
 
 
 # ---------------------------------------------------------------- shape tests
