@@ -90,8 +90,9 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers -m 'not network'"
 markers = [
     "integration: tests that exercise the MCP tool surface end-to-end",
     "schema_evolution: tests that prove projection tolerates new upstream fields",
+    "network: tests that make live HTTP requests; deselected by default (CI does not run them). Run locally with `pytest -m network` before releases.",
 ]
