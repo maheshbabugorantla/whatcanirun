@@ -34,6 +34,31 @@ _RECENCY_THRESHOLD = dt.timedelta(days=30 * 18)
 # Semver-ish: MAJOR.MINOR[.(PATCH|x)]. Rejects "latest", "main", "dev".
 _ENGINE_VERSION_RE = re.compile(r"^\d+\.\d+(\.(\d+|x))?$")
 
+# Form-factor disambiguation per M10 pitfall "Cross-pollinated GPUs":
+# these data-center SKUs ship in multiple form factors with different
+# bandwidth (e.g. H100 SXM5 3350 GB/s vs H100 PCIe 2000 GB/s). Cells
+# whose notes mention any of these GPU names without disclosing which
+# form factor was tested are ambiguous and get a blocking error.
+_AMBIGUOUS_GPU_NAMES = ("h100", "h200", "a100")
+_FORM_FACTOR_TOKENS = ("sxm", "pcie", "nvl", "oam")
+
+# Same kernel-efficiency constant tps_estimator Tier 3 uses; kept here
+# so the heuristic check stays in lock-step without an inter-module
+# dependency on the production estimator.
+_KERNEL_EFFICIENCY_SINGLE_STREAM = 0.75
+
+# Heuristic comparison band — anything outside [0.5, 1.5] (i.e. ±50%)
+# is worth a curator's attention, but not a blocking error since the
+# actual TPS may legitimately differ from the heuristic.
+_HEURISTIC_RATIO_BAND_LOW = 0.5
+_HEURISTIC_RATIO_BAND_HIGH = 1.5
+
+# Batch-scaling sanity threshold: if batched_tps / (batch * single_tps)
+# is >= this, the cell is probably reporting per-stream throughput as
+# if it were per-batch. ADR-010's verified 6x wrong at batch=128 puts
+# real sub-linear ratios closer to 0.4 in practice.
+_LINEAR_BATCH_THRESHOLD = 0.85
+
 Severity = Literal["pass", "warn", "error"]
 
 
@@ -292,4 +317,167 @@ def check_model_slug_exists(cell: BenchmarkCell, ctx: CheckContext) -> CheckResu
     return CheckResult(
         severity="pass",
         message=f"model_slug {cell.model_slug!r} resolves in tracked_models",
+    )
+
+
+def check_gpu_form_factor_disambiguated(cell: BenchmarkCell) -> CheckResult:
+    """If `notes` mentions an ambiguous data-center GPU name
+    (H100, H200, A100) without disclosing the form factor (SXM,
+    PCIe, NVL, OAM), the cell's bandwidth assumptions are unclear.
+    Blocking error per M10 pitfall.
+
+    Single-form-factor GPUs (L40S, RTX series, etc.) don't trigger
+    the check. The check is case-insensitive and tolerates the
+    common 'A100 80GB SXM' / 'H100 SXM5' variants."""
+    notes_lower = cell.notes.lower()
+    for gpu_name in _AMBIGUOUS_GPU_NAMES:
+        if gpu_name in notes_lower and not any(
+            token in notes_lower for token in _FORM_FACTOR_TOKENS
+        ):
+            return CheckResult(
+                severity="error",
+                message=(
+                    f"notes mentions {gpu_name.upper()} but does not "
+                    f"disclose a form factor (SXM, PCIe, NVL, or OAM). "
+                    f"{gpu_name.upper()} ships in multiple form factors "
+                    f"with different bandwidth; the cell is ambiguous "
+                    f"without one of these tokens in notes."
+                ),
+            )
+    return CheckResult(
+        severity="pass",
+        message="form factor either disambiguated or not required",
+    )
+
+
+def check_batch_scaling_not_linear(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult:
+    """For batch>1 cells, find the single-stream (batch=1) peer with
+    the same (gpu, model, quant, tp, ctx) and verify the batched
+    decode_tps is sub-linear vs `batch * single_stream_tps`. A ratio
+    above 0.85 likely means the source mislabeled per-stream
+    throughput as per-batch — blocking error per ADR-010.
+
+    If no single-stream peer exists in `ctx.existing_cells`, return
+    warn ('cannot verify') rather than pass — the curator should
+    add the single-stream peer to enable the check."""
+    if cell.batch_size == 1:
+        return CheckResult(severity="pass", message="batch=1; scaling check does not apply")
+    peer = None
+    for existing in ctx.existing_cells:
+        if (
+            existing.gpu_slug == cell.gpu_slug
+            and existing.model_slug == cell.model_slug
+            and existing.quant_slug == cell.quant_slug
+            and existing.tp_size == cell.tp_size
+            and existing.context_length == cell.context_length
+            and existing.batch_size == 1
+        ):
+            peer = existing
+            break
+    if peer is None:
+        return CheckResult(
+            severity="warn",
+            message=(
+                f"no single-stream (batch=1) peer found in existing parquet "
+                f"for ({cell.gpu_slug}, {cell.model_slug}, {cell.quant_slug}, "
+                f"tp={cell.tp_size}, ctx={cell.context_length}); cannot "
+                f"verify sub-linear batch scaling"
+            ),
+        )
+    ratio = cell.decode_tps / (cell.batch_size * peer.decode_tps)
+    if ratio >= _LINEAR_BATCH_THRESHOLD:
+        return CheckResult(
+            severity="error",
+            message=(
+                f"batched decode_tps {cell.decode_tps} ~= batch_size "
+                f"{cell.batch_size} * single_stream_tps {peer.decode_tps} "
+                f"(ratio {ratio:.2f} >= {_LINEAR_BATCH_THRESHOLD}); per "
+                f"ADR-010 batched throughput is sub-linear. Source likely "
+                f"reports per-stream as per-batch; re-check methodology."
+            ),
+        )
+    return CheckResult(
+        severity="pass",
+        message=f"batched scaling ratio {ratio:.2f} is sub-linear (peer found)",
+    )
+
+
+def _params_b_for_traffic(model_row: TrackedModelRow) -> tuple[float, str] | None:
+    """Returns the parameter count to use for memory-traffic prediction
+    plus a short label ('active' or 'total') for diagnostic messages.
+    Sparse / MoE models advertise both `total_params_b` and
+    `active_params_b`; only the active subset is read per token, so
+    the heuristic over-predicts memory traffic by total/active if you
+    naively use total. The prototype caught DeepSeek-V3 at a 404%
+    over-prediction this way."""
+    if model_row.active_params_b is not None and model_row.active_params_b > 0:
+        return (model_row.active_params_b, "active")
+    if model_row.total_params_b is not None and model_row.total_params_b > 0:
+        return (model_row.total_params_b, "total")
+    return None
+
+
+def check_decode_tps_vs_bandwidth_heuristic(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult:
+    """Compare cell.decode_tps against the bandwidth heuristic
+    `(bandwidth_gbps / weights_bytes_per_token) * KERNEL_EFFICIENCY`.
+    Only fires at batch=1 (the heuristic doesn't apply to batched
+    throughput per ADR-010). Warns when ratio falls outside [0.5, 1.5];
+    skips silently when bandwidth / params / bits_per_weight aren't
+    available (data gap is the curator's signal, not their fault)."""
+    if cell.batch_size != 1:
+        return CheckResult(
+            severity="pass",
+            message="batch>1; bandwidth heuristic does not apply, skipped",
+        )
+    gpu_row = next((g for g in ctx.gpu_catalog if g.slug == cell.gpu_slug), None)
+    quant_row = next((q for q in ctx.quantizations if q.slug == cell.quant_slug), None)
+    model_row = next((m for m in ctx.tracked_models if m.slug == cell.model_slug), None)
+    if gpu_row is None or quant_row is None or model_row is None:
+        return CheckResult(
+            severity="pass",
+            message=(
+                f"skipped: missing catalog row "
+                f"(gpu={gpu_row is not None}, quant={quant_row is not None}, "
+                f"model={model_row is not None})"
+            ),
+        )
+    bw_raw = gpu_row.specs.get("memory_bandwidth_gbps")
+    if not isinstance(bw_raw, (int, float)) or bw_raw <= 0:
+        return CheckResult(
+            severity="pass",
+            message=f"skipped: gpu_slug {cell.gpu_slug!r} missing memory_bandwidth_gbps",
+        )
+    bandwidth_gbps = float(bw_raw)
+    params_pair = _params_b_for_traffic(model_row)
+    if params_pair is None:
+        return CheckResult(
+            severity="pass",
+            message=(
+                f"skipped: tracked_models row for {cell.model_slug!r} "
+                f"missing both total_params_b and active_params_b"
+            ),
+        )
+    params_b, params_label = params_pair
+    weights_bytes_per_token = params_b * 1e9 * quant_row.bits_per_weight / 8.0
+    peak_tps = bandwidth_gbps * 1e9 / weights_bytes_per_token
+    predicted = peak_tps * _KERNEL_EFFICIENCY_SINGLE_STREAM
+    ratio = cell.decode_tps / predicted
+    if _HEURISTIC_RATIO_BAND_LOW <= ratio <= _HEURISTIC_RATIO_BAND_HIGH:
+        return CheckResult(
+            severity="pass",
+            message=(
+                f"actual {cell.decode_tps:.1f} tok/s within band of "
+                f"predicted {predicted:.1f} tok/s "
+                f"({params_label}_params_b={params_b}); ratio {ratio:.2f}"
+            ),
+        )
+    return CheckResult(
+        severity="warn",
+        message=(
+            f"actual {cell.decode_tps:.1f} tok/s vs predicted "
+            f"{predicted:.1f} tok/s ({params_label}_params_b={params_b}, "
+            f"bw={bandwidth_gbps:.0f} GB/s); ratio {ratio:.2f} outside "
+            f"[{_HEURISTIC_RATIO_BAND_LOW}, {_HEURISTIC_RATIO_BAND_HIGH}] band. "
+            f"Curator should re-verify the source's methodology."
+        ),
     )

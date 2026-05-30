@@ -19,7 +19,10 @@ import pytest
 from scripts.m10.sanity_check_cells import (
     CheckContext,
     CheckResult,
+    check_batch_scaling_not_linear,
+    check_decode_tps_vs_bandwidth_heuristic,
     check_engine_version_format,
+    check_gpu_form_factor_disambiguated,
     check_gpu_slug_exists,
     check_measured_at_recency,
     check_methodology_complete,
@@ -455,6 +458,263 @@ class TestModelSlugExists:
         assert "mistral-large" in result.message
         # The error should hint at the resolution path: add to tracked_models.
         assert "tracked_models" in result.message
+
+
+# ---------------------------------------------------------------- check_gpu_form_factor_disambiguated
+
+
+class TestGpuFormFactorDisambiguated:
+    """Per the M10 pitfall: "H100 in a benchmark might mean H100 SXM
+    or PCIe. They have different bandwidth." For cells whose notes
+    mention a data-center GPU known to ship in multiple form factors
+    (H100, H200, A100), the notes must ALSO mention which form
+    factor (SXM, PCIe, NVL, OAM) was tested. Otherwise the cell's
+    bandwidth assumptions are ambiguous."""
+
+    def test_h100_with_sxm_passes(self) -> None:
+        cell = _valid_cell(
+            notes=(
+                "Single H100 SXM5, fp8, batch=1, ctx=4096. vLLM 0.6.x "
+                "with paged_attention. Reference run from blog."
+            )
+        )
+        result = check_gpu_form_factor_disambiguated(cell)
+        assert result.severity == "pass"
+
+    def test_h100_with_pcie_passes(self) -> None:
+        cell = _valid_cell(notes=("H100 PCIe, fp8, batch=1, ctx=4096. vLLM 0.6.x reference run."))
+        result = check_gpu_form_factor_disambiguated(cell)
+        assert result.severity == "pass"
+
+    def test_h100_without_form_factor_errors(self) -> None:
+        cell = _valid_cell(
+            notes=(
+                "H100, fp8, batch=1, ctx=4096. vLLM 0.6.x reference "
+                "run from blog (no form factor disclosed)."
+            )
+        )
+        result = check_gpu_form_factor_disambiguated(cell)
+        assert result.severity == "error"
+        assert "form factor" in result.message.lower() or "sxm" in result.message.lower()
+
+    def test_h200_without_form_factor_errors(self) -> None:
+        cell = _valid_cell(notes=("H200, fp8, batch=1, ctx=4096. vLLM 0.6.x reference."))
+        result = check_gpu_form_factor_disambiguated(cell)
+        assert result.severity == "error"
+
+    def test_a100_with_form_factor_passes(self) -> None:
+        cell = _valid_cell(
+            notes=("A100 80GB SXM, bf16, batch=1, ctx=4096. vLLM 0.6.x reference run from blog.")
+        )
+        result = check_gpu_form_factor_disambiguated(cell)
+        assert result.severity == "pass"
+
+    def test_l40s_no_disambiguation_required_passes(self) -> None:
+        # L40S only ships in one form factor (PCIe), so the notes
+        # need not call it out. Avoid false-positive errors on
+        # single-form-factor GPUs.
+        cell = _valid_cell(notes=("L40S, bf16, batch=1, ctx=4096. vLLM 0.6.x reference."))
+        result = check_gpu_form_factor_disambiguated(cell)
+        assert result.severity == "pass"
+
+
+# ---------------------------------------------------------------- check_batch_scaling_not_linear
+
+
+class TestBatchScalingNotLinear:
+    """ADR-010: TPS does NOT scale linearly with batch size. Verified
+    6x wrong at batch=128. A candidate cell with batch>1 should
+    have decode_tps that's noticeably sub-linear vs its single-stream
+    peer. If the cell's ratio (batched_tps / (batch * single_tps))
+    is >= 0.85, that's suspicious — either the source reported per-
+    batch throughput as if it were per-stream, or methodology is
+    ambiguous. Error."""
+
+    def test_batch_one_skipped(self) -> None:
+        # batch=1 cells don't have a scaling claim; the check
+        # passes trivially.
+        cell = _valid_cell(batch_size=1, decode_tps=100.0)
+        ctx = _ctx(existing_cells=[])
+        result = check_batch_scaling_not_linear(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_sublinear_batch_passes(self) -> None:
+        # batch=8 at 350 tok/s vs single at 100 tok/s → ratio 0.44,
+        # well below 0.85 — believable batched throughput.
+        cell = _valid_cell(batch_size=8, decode_tps=350.0)
+        existing = [_valid_cell(batch_size=1, decode_tps=100.0)]
+        ctx = _ctx(existing_cells=existing)
+        result = check_batch_scaling_not_linear(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_near_linear_batch_errors(self) -> None:
+        # batch=8 at 800 tok/s vs single at 100 tok/s → ratio 1.0,
+        # impossibly linear; either the source mislabeled or it's
+        # per-stream throughput presented as per-batch.
+        cell = _valid_cell(batch_size=8, decode_tps=800.0)
+        existing = [_valid_cell(batch_size=1, decode_tps=100.0)]
+        ctx = _ctx(existing_cells=existing)
+        result = check_batch_scaling_not_linear(cell, ctx)
+        assert result.severity == "error"
+        assert "linear" in result.message.lower() or "batch" in result.message.lower()
+
+    def test_no_single_stream_peer_warns(self) -> None:
+        # Batched cell with no single-stream peer in existing rows;
+        # we can't verify so warn rather than pass or error.
+        cell = _valid_cell(batch_size=8, decode_tps=350.0)
+        ctx = _ctx(existing_cells=[])
+        result = check_batch_scaling_not_linear(cell, ctx)
+        assert result.severity == "warn"
+        assert "peer" in result.message.lower() or "single-stream" in result.message.lower()
+
+
+# ---------------------------------------------------------------- check_decode_tps_vs_bandwidth_heuristic
+
+
+class TestDecodeTpsVsBandwidthHeuristic:
+    """Cross-check the cell's decode_tps against the same bandwidth
+    heuristic tps_estimator Tier 3 uses. For batch=1 only — at
+    batch>1 the heuristic doesn't apply per ADR-010.
+
+    MoE-aware: when the tracked_models row carries active_params_b
+    (sparse model), use it; otherwise fall back to total_params_b.
+    Naively using total_params_b for MoE produces wildly-off
+    predictions (the prototype caught DeepSeek-V3 at a 404% over-
+    prediction this way).
+
+    Returns warn if predicted/actual is outside [0.5, 1.5]; that's
+    a curator hint, not a blocking error — the actual may legitimately
+    differ from the heuristic (kernel efficiency varies, sparse
+    activation, speculative decoding, etc.).
+
+    Skips the check entirely (returns pass with 'skipped' message)
+    when any of bandwidth / params / bits_per_weight is missing —
+    the curator can't be blamed for the data gap."""
+
+    def _h100_ctx(self, **tracked_overrides: Any) -> CheckContext:
+        return _ctx(
+            gpu_catalog=[_gpu("h100")],  # bandwidth 3350 GB/s
+            quantizations=[_quant("bf16", 16), _quant("fp8", 8)],
+            tracked_models=[
+                TrackedModelRow(
+                    slug="llama-3-1-8b",
+                    hf_repo_id="meta-llama/Meta-Llama-3.1-8B",
+                    total_params_b=8.0,
+                    **tracked_overrides,
+                )
+            ],
+        )
+
+    def test_in_band_actual_passes(self) -> None:
+        # 8B bf16 on H100: predicted ~157 tok/s. Actual 130 → ratio
+        # 0.83, in band.
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="llama-3-1-8b",
+            quant_slug="bf16",
+            batch_size=1,
+            decode_tps=130.0,
+        )
+        ctx = self._h100_ctx()
+        result = check_decode_tps_vs_bandwidth_heuristic(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_actual_much_lower_warns(self) -> None:
+        # 8B bf16 on H100: predicted ~157 tok/s. Actual 40 → ratio
+        # 0.25, out of [0.5, 1.5].
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="llama-3-1-8b",
+            quant_slug="bf16",
+            batch_size=1,
+            decode_tps=40.0,
+        )
+        ctx = self._h100_ctx()
+        result = check_decode_tps_vs_bandwidth_heuristic(cell, ctx)
+        assert result.severity == "warn"
+        assert "predicted" in result.message.lower() or "heuristic" in result.message.lower()
+
+    def test_actual_much_higher_warns(self) -> None:
+        # 8B bf16 on H100: predicted ~157 tok/s. Actual 400 → ratio
+        # 2.5, out of [0.5, 1.5].
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="llama-3-1-8b",
+            quant_slug="bf16",
+            batch_size=1,
+            decode_tps=400.0,
+        )
+        ctx = self._h100_ctx()
+        result = check_decode_tps_vs_bandwidth_heuristic(cell, ctx)
+        assert result.severity == "warn"
+
+    def test_batch_greater_than_one_skipped(self) -> None:
+        # At batch>1 the heuristic doesn't apply; skip cleanly.
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="llama-3-1-8b",
+            quant_slug="bf16",
+            batch_size=8,
+            decode_tps=350.0,
+        )
+        ctx = self._h100_ctx()
+        result = check_decode_tps_vs_bandwidth_heuristic(cell, ctx)
+        assert result.severity == "pass"
+        assert "skip" in result.message.lower() or "batch" in result.message.lower()
+
+    def test_missing_params_skipped(self) -> None:
+        # No total_params_b → can't compute; pass with 'skipped'.
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="unknown-7b",
+            quant_slug="bf16",
+            batch_size=1,
+            decode_tps=100.0,
+        )
+        ctx = _ctx(
+            gpu_catalog=[_gpu("h100")],
+            quantizations=[_quant("bf16", 16)],
+            tracked_models=[
+                TrackedModelRow(
+                    slug="unknown-7b",
+                    hf_repo_id="example/unknown-7b",
+                    # total_params_b deliberately omitted
+                )
+            ],
+        )
+        result = check_decode_tps_vs_bandwidth_heuristic(cell, ctx)
+        assert result.severity == "pass"
+        assert "skip" in result.message.lower() or "missing" in result.message.lower()
+
+    def test_moe_uses_active_params(self) -> None:
+        # MoE model — total=685B, active=37B (DeepSeek-V3-ish).
+        # Using total naively gives prediction ~3.7 tok/s (way
+        # below 18.5 actual). Using active gives ~68 tok/s, so
+        # ratio = 18.5/68 = 0.27 → warn (still out of band but a
+        # MUCH closer / more useful diagnostic).
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="deepseek-v3",
+            quant_slug="fp8",
+            batch_size=1,
+            decode_tps=18.5,
+        )
+        ctx = _ctx(
+            gpu_catalog=[_gpu("h100")],
+            quantizations=[_quant("fp8", 8)],
+            tracked_models=[
+                TrackedModelRow(
+                    slug="deepseek-v3",
+                    hf_repo_id="deepseek-ai/DeepSeek-V3",
+                    total_params_b=685.0,
+                    active_params_b=37.0,
+                )
+            ],
+        )
+        result = check_decode_tps_vs_bandwidth_heuristic(cell, ctx)
+        # The check should NOT just say "predicted 3.7" (naive total)
+        # — it should reference the active-params figure in the message.
+        assert "active" in result.message.lower() or "37" in result.message
 
 
 # ---------------------------------------------------------------- shape tests
