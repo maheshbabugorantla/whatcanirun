@@ -240,3 +240,85 @@ async def test_load_runtime_deps_reads_user_models_yaml(tmp_path: Any, offline_c
     )
     slugs = {r.slug for r in deps.tracked_models}
     assert "user-added-model" in slugs
+
+
+# ============================================================ model_catalog_with_resolved
+
+
+def _build_minimal_model(slug: str, repo_id: str) -> Any:
+    """Construct a Llama-3.3-70B-shaped Model for the helper tests."""
+    import datetime as dt
+
+    from whatcanirun.catalog.hf_model import Model
+
+    return Model(
+        slug=slug,
+        hf_repo_id=repo_id,
+        display_name=slug,
+        total_params_b=70.6,
+        active_params_b=None,
+        n_layers=80,
+        n_attention_heads=64,
+        n_kv_heads=8,
+        head_dim=128,
+        hidden_size=8192,
+        max_position_embeddings=131072,
+        native_dtype="bfloat16",
+        architecture_family="llama",
+        kv_cache_strategy="standard_gqa",
+        raw_config={},
+        raw_safetensors_meta={},
+        hf_revision_sha=f"sha-{slug}",
+        last_synced_at=dt.datetime(2026, 5, 28, tzinfo=dt.UTC),
+    )
+
+
+def test_model_catalog_with_resolved_appends_new_entry() -> None:
+    """Case 1b: lazy-sync produced a model that isn't in
+    deps.model_catalog. The helper must include it in the
+    returned list so query_cost_cells can find it."""
+    from whatcanirun.mcp_tools.dispatch import model_catalog_with_resolved
+
+    other = _build_minimal_model("other-cached-model", "vendor/other")
+    deps = RuntimeDeps(model_catalog=[other])
+    resolved = _build_minimal_model("just-synced", "vendor/just-synced")
+
+    merged = model_catalog_with_resolved(deps, resolved)
+
+    slugs = [m.slug for m in merged]
+    assert "just-synced" in slugs
+    assert "other-cached-model" in slugs
+
+
+def test_model_catalog_with_resolved_dedupes_case_1a_cache_hit() -> None:
+    """Case 1a: dispatched.model came from deps.model_catalog
+    itself. The helper must NOT produce a list with two entries
+    for the same slug — that would let query_cost_cells iterate
+    the same model twice and emit duplicate cost cells."""
+    from whatcanirun.mcp_tools.dispatch import model_catalog_with_resolved
+
+    cached = _build_minimal_model("cached", "vendor/cached")
+    deps = RuntimeDeps(model_catalog=[cached])
+
+    merged = model_catalog_with_resolved(deps, cached)
+
+    slugs = [m.slug for m in merged]
+    assert slugs == ["cached"], f"expected dedupe to a single row, got {slugs}"
+
+
+def test_model_catalog_with_resolved_replaces_stale_cache_row() -> None:
+    """Edge: a stale cached version of the same slug + a fresh
+    just-synced version both exist. The resolved (just-synced)
+    one must win — it's the canonical Model per the dispatcher
+    contract."""
+    from whatcanirun.mcp_tools.dispatch import model_catalog_with_resolved
+
+    stale = _build_minimal_model("same-slug", "vendor/stale-fork")
+    fresh = _build_minimal_model("same-slug", "vendor/canonical")
+    deps = RuntimeDeps(model_catalog=[stale])
+
+    merged = model_catalog_with_resolved(deps, fresh)
+
+    assert len(merged) == 1
+    # Resolved model wins — its hf_repo_id is what survives.
+    assert merged[0].hf_repo_id == "vendor/canonical"

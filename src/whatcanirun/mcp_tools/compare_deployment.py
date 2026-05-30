@@ -154,6 +154,7 @@ async def compare_deployment_modes(
     from whatcanirun.mcp_tools.dispatch import (
         Case1Resolved,
         dispatch_model_request,
+        model_catalog_with_resolved,
     )
     from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
 
@@ -183,7 +184,10 @@ async def compare_deployment_modes(
         gpu_prices=deps.gpu_prices,
         llm_prices=deps.llm_prices,
         gpu_catalog=deps.gpu_catalog,
-        model_catalog=deps.model_catalog,
+        # See find_cheapest.py for the rationale: deps.model_catalog
+        # was loaded before dispatch; splice the resolved model in
+        # so a Case 1b lazy-synced model is visible to the query.
+        model_catalog=model_catalog_with_resolved(deps, dispatched.model),
         quantizations=deps.quantizations,
         bench_cells=deps.bench_cells,
         aa_observations=None,

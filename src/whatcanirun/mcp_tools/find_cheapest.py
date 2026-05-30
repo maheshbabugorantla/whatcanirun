@@ -98,6 +98,7 @@ async def find_cheapest_deployment(
         Case1Resolved,
         Case2HostedOnly,
         dispatch_model_request,
+        model_catalog_with_resolved,
     )
     from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
     from whatcanirun.trust.builders import build_case_2_partial_cells
@@ -127,7 +128,10 @@ async def find_cheapest_deployment(
         gpu_prices=deps.gpu_prices,
         llm_prices=deps.llm_prices,
         gpu_catalog=deps.gpu_catalog,
-        model_catalog=deps.model_catalog,
+        # `deps.model_catalog` was loaded before dispatch ran, so
+        # Case 1b lazy-sync isn't reflected. Splice the resolved
+        # model in so the just-synced row is visible.
+        model_catalog=model_catalog_with_resolved(deps, dispatched.model),
         quantizations=deps.quantizations,
         bench_cells=deps.bench_cells,
         aa_observations=None,

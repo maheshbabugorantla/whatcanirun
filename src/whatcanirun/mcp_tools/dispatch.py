@@ -309,6 +309,26 @@ class Case1Resolved:
     model: Model
 
 
+def model_catalog_with_resolved(deps: RuntimeDeps, resolved_model: Model) -> list[Model]:
+    """Return a `model_catalog` list guaranteed to contain the
+    dispatcher-resolved model — and ONLY that model under its
+    slug (no duplicate row).
+
+    After Case 1b lazy-sync, `deps.model_catalog` is stale: the
+    snapshot was loaded BEFORE `dispatch_model_request` ran, so
+    the freshly-synced Model isn't there. Passing the stale
+    `deps.model_catalog` into `query_cost_cells` would make the
+    just-synced model invisible — the filter would drop it and
+    the tool would return zero cells even though sync succeeded.
+
+    The fix is to splice the resolved model in (and dedupe by
+    slug so Case 1a cache-hits don't end up with two rows for the
+    same slug). All four numerical tool wrappers that call
+    `query_cost_cells` after dispatch should use this helper."""
+    other = [m for m in deps.model_catalog if m.slug != resolved_model.slug]
+    return [resolved_model, *other]
+
+
 @dataclass(frozen=True)
 class Case2HostedOnly:
     """The model is in CP's hosted-API catalog but not in our
