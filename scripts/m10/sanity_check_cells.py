@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -481,3 +482,166 @@ def check_decode_tps_vs_bandwidth_heuristic(cell: BenchmarkCell, ctx: CheckConte
             f"Curator should re-verify the source's methodology."
         ),
     )
+
+
+# ---------------------------------------------------------------- CLI
+
+
+_SEVERITY_EXIT_CODE: dict[Severity, int] = {"pass": 0, "warn": 1, "error": 2}
+
+
+def _load_candidate_cells(path: Path) -> list[BenchmarkCell]:
+    """Load BenchmarkCell rows from a YAML or JSON candidate file.
+    Pydantic does strict validation per BenchmarkCell.model_config —
+    any malformed row raises ValidationError, which the CLI lets
+    propagate as a non-zero exit."""
+    import json
+
+    import yaml
+
+    raw = path.read_text()
+    rows = json.loads(raw) if path.suffix == ".json" else yaml.safe_load(raw)
+    return [BenchmarkCell.model_validate(row) for row in rows]
+
+
+def _load_existing_parquet(path: Path) -> list[BenchmarkCell]:
+    """Load existing parquet rows as BenchmarkCell instances. An
+    empty parquet returns []. Missing file returns [] too — the
+    very first candidate run may predate the parquet."""
+    import pyarrow.parquet as pq
+
+    if not path.exists():
+        return []
+    table = pq.read_table(path)
+    return [
+        BenchmarkCell.model_validate(
+            {col: table.column(col)[i].as_py() for col in table.column_names}
+        )
+        for i in range(table.num_rows)
+    ]
+
+
+def _load_yaml_rows[Row](path: Path, model: type[Row]) -> list[Row]:  # type: ignore[type-var,valid-type]
+    """Generic loader for the three catalog YAML files. Each row
+    is validated against its Pydantic model."""
+    import yaml
+
+    raw = yaml.safe_load(path.read_text())
+    return [model.model_validate(row) for row in raw]  # type: ignore[attr-defined]
+
+
+def _build_context(
+    parquet: Path,
+    gpu_catalog: Path,
+    quantizations: Path,
+    tracked_models: Path,
+) -> CheckContext:
+    return CheckContext(
+        existing_cells=_load_existing_parquet(parquet),
+        gpu_catalog=_load_yaml_rows(gpu_catalog, GpuCatalogRow),
+        quantizations=_load_yaml_rows(quantizations, Quantization),
+        tracked_models=_load_yaml_rows(tracked_models, TrackedModelRow),
+    )
+
+
+def _run_all_checks(cell: BenchmarkCell, ctx: CheckContext) -> list[tuple[str, CheckResult]]:
+    """Run every check against a single cell. Returns a list of
+    (check_name, result) pairs preserving order for the human-
+    readable report."""
+    return [
+        ("source_url_well_formed", check_source_url_well_formed(cell)),
+        ("engine_version_format", check_engine_version_format(cell)),
+        ("measured_at_recency", check_measured_at_recency(cell)),
+        ("methodology_complete", check_methodology_complete(cell)),
+        ("op_point_unique", check_op_point_unique(cell, ctx)),
+        ("gpu_slug_exists", check_gpu_slug_exists(cell, ctx)),
+        ("quant_slug_exists", check_quant_slug_exists(cell, ctx)),
+        ("model_slug_exists", check_model_slug_exists(cell, ctx)),
+        ("gpu_form_factor_disambiguated", check_gpu_form_factor_disambiguated(cell)),
+        ("batch_scaling_not_linear", check_batch_scaling_not_linear(cell, ctx)),
+        ("decode_tps_vs_bandwidth_heuristic", check_decode_tps_vs_bandwidth_heuristic(cell, ctx)),
+    ]
+
+
+def _max_severity(results: list[tuple[str, CheckResult]]) -> Severity:
+    """Aggregate the maximum severity across a result set. Errors
+    dominate warns dominate passes — matches the exit-code mapping."""
+    seen = {r.severity for _, r in results}
+    if "error" in seen:
+        return "error"
+    if "warn" in seen:
+        return "warn"
+    return "pass"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point. Returns 0 / 1 / 2 (clean / warn / error).
+    On exit 0, writes a `<candidate>.sanity-passed` sidecar that
+    the V2 merge tool requires before appending rows to the parquet."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="sanity_check_cells")
+    parser.add_argument("candidate", type=Path, help="path to candidate YAML/JSON file")
+    parser.add_argument(
+        "--parquet",
+        type=Path,
+        default=Path("seeds/benchmark_cells.parquet"),
+        help="path to the canonical benchmark_cells parquet (default: seeds/benchmark_cells.parquet)",
+    )
+    parser.add_argument(
+        "--gpu-catalog",
+        type=Path,
+        required=True,
+        help="path to a YAML snapshot of CP's gpu_catalog (slug + bandwidth specs)",
+    )
+    parser.add_argument(
+        "--quantizations",
+        type=Path,
+        default=Path("seeds/quantizations.yaml"),
+        help="path to seeds/quantizations.yaml",
+    )
+    parser.add_argument(
+        "--tracked-models",
+        type=Path,
+        default=Path("seeds/tracked_models.yaml"),
+        help="path to seeds/tracked_models.yaml",
+    )
+    args = parser.parse_args(argv)
+
+    candidates = _load_candidate_cells(args.candidate)
+    ctx = _build_context(
+        parquet=args.parquet,
+        gpu_catalog=args.gpu_catalog,
+        quantizations=args.quantizations,
+        tracked_models=args.tracked_models,
+    )
+
+    aggregate_severity: Severity = "pass"
+    for idx, cell in enumerate(candidates):
+        print(
+            f"--- candidate row {idx} ({cell.gpu_slug}/{cell.model_slug}/{cell.quant_slug}, batch={cell.batch_size}) ---"
+        )
+        results = _run_all_checks(cell, ctx)
+        for check_name, r in results:
+            marker = {"pass": "OK", "warn": "WARN", "error": "ERR"}[r.severity]
+            print(f"  [{marker:4s}] {check_name}: {r.message}")
+        row_severity = _max_severity(results)
+        if _SEVERITY_EXIT_CODE[row_severity] > _SEVERITY_EXIT_CODE[aggregate_severity]:
+            aggregate_severity = row_severity
+
+    exit_code = _SEVERITY_EXIT_CODE[aggregate_severity]
+    print()
+    print(f"aggregate: {aggregate_severity} (exit code {exit_code})")
+
+    if exit_code == 0:
+        sidecar = args.candidate.with_suffix(args.candidate.suffix + ".sanity-passed")
+        sidecar.write_text("sanity_check_cells exit 0\n")
+        print(f"wrote sidecar: {sidecar}")
+
+    return exit_code
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())
