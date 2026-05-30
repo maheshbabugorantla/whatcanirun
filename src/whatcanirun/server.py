@@ -106,6 +106,14 @@ mcp.resource(
 )(_render_provenance_document)
 
 
+# --------------------------------------------------------------- Prompts
+# `/benchmark-on-budget` — see `whatcanirun/mcp_tools/prompt.py`.
+
+from whatcanirun.mcp_tools.prompt import benchmark_on_budget as _benchmark_on_budget  # noqa: E402
+
+mcp.prompt(_benchmark_on_budget, name="benchmark-on-budget")
+
+
 def main() -> None:
     """`uvx whatcanirun-mcp` entry point. Runs the FastMCP stdio
     transport by default — the calling client (Claude Desktop,
