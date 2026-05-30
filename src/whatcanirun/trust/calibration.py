@@ -93,9 +93,14 @@ def fit_check_methodology_confidence() -> float:
     return _FIT_CHECK_METHODOLOGY_CONFIDENCE
 
 
-# `Lowest = "lowest" / Newest = "newest"` — kept as a sentinel so the
-# `_combine_freshness` helper below can disambiguate intent at call
-# sites that need it; today only `lowest` is used.
+# Closed enum of rollup policies `combine_freshness` accepts. Today
+# only `"lowest"` is implemented (weakest-link rule, per spec/SHARED.md
+# § Confidence calibration); the type is kept as a `Literal` rather
+# than a bare `str` so adding a future policy (e.g. `"newest"` for an
+# "any-fresh-source-suffices" rule) is a one-line widening here plus a
+# new branch in `combine_freshness`, with mypy flagging every call site
+# that needs to opt in. `combine_freshness` raises on anything outside
+# this Literal today.
 _FreshnessRollup = Literal["lowest"]
 
 
