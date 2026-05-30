@@ -21,6 +21,7 @@ UnknownModelResponse) when a cache hasn't been warmed yet.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 from dataclasses import dataclass, field
@@ -115,6 +116,13 @@ async def _meta_generated_at(client: ComputePricesClient, endpoint: str) -> dt.d
     with `None` and the freshness curve takes care of the rest."""
     try:
         raw = await client.get_raw_response(endpoint)
+    except asyncio.CancelledError:
+        # NEVER swallow cancellation. Same rule the resource
+        # handler + dispatcher follow: cooperative cancellation
+        # has to propagate through every async helper that
+        # otherwise catches broadly, or a client disconnect leaves
+        # the server doing CP work the user no longer wants.
+        raise
     except Exception:
         return None
     meta = raw.get("meta") if isinstance(raw, dict) else None
