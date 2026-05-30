@@ -51,3 +51,6 @@ tmp/
 
 # Generated data (regenerated from upstream)
 seeds/benchmark_cells.parquet.tmp
+
+# Claude Code milestone-completion sentinel (transient, never tracked)
+.claude/.compact-pending
