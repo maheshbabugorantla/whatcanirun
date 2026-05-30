@@ -28,8 +28,16 @@ from pathlib import Path
 
 def _resolve_seeds_dir() -> Path:
     """Pick the right seeds directory per the resolution order
-    in the module docstring."""
+    in the module docstring. Raises `RuntimeError` with an
+    actionable message if NONE of the three options yields an
+    existing directory — the alternative was a non-existent path
+    surfacing later as `SeedLoadError` from inside a tool call,
+    which made the root cause much harder to diagnose."""
     # 1. Explicit env override — the wheel-install workaround.
+    # Trust the user-supplied path even if it doesn't exist yet
+    # (they may have set it pointing to a future location). Tools
+    # that try to read the path will surface the missing-file
+    # error themselves with the right context.
     raw_override = os.environ.get("WHATCANIRUN_SEEDS_DIR", "").strip()
     if raw_override:
         return Path(raw_override).expanduser()
@@ -46,7 +54,27 @@ def _resolve_seeds_dir() -> Path:
     # 3. Repo-root seeds — the dev / editable-install default.
     # paths.py lives at src/whatcanirun/paths.py — two parents up
     # is the repo root.
-    return Path(__file__).resolve().parent.parent.parent / "seeds"
+    repo_default = Path(__file__).resolve().parent.parent.parent / "seeds"
+    if repo_default.is_dir():
+        return repo_default
+
+    # No candidate matched — fail fast with a clear message
+    # naming all three resolution options the user can fix. The
+    # alternative was returning the non-existent repo_default,
+    # which would surface later as `SeedLoadError`/`FileNotFoundError`
+    # from inside the first tool call that touched the catalog —
+    # a confusing tooltip far from the root cause.
+    raise RuntimeError(
+        "whatcanirun could not locate a seeds directory.\n"
+        "Resolution order tried:\n"
+        f"  1. $WHATCANIRUN_SEEDS_DIR (env override): unset or empty\n"
+        f"  2. packaged whatcanirun/seeds/ (post-M12 wheel): not found at {packaged}\n"
+        f"  3. <repo-root>/seeds (editable install): not found at {repo_default}\n"
+        "\n"
+        "If you're using a wheel install (e.g. `uvx whatcanirun-mcp`), set "
+        "WHATCANIRUN_SEEDS_DIR to a checkout of the project's `seeds/` directory "
+        "until M12 ships packaged seeds in the wheel."
+    )
 
 
 # `SEEDS_DIR` is evaluated at import time. Any module that does

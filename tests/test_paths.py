@@ -87,6 +87,36 @@ def test_env_var_expands_user_home(tmp_path: Any) -> None:
             os.environ["WHATCANIRUN_SEEDS_DIR"] = saved
 
 
+def test_raises_when_no_candidate_dir_exists(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    """Copilot review #15 round 9 #1: when no candidate directory
+    matches (env unset, no packaged seeds, no repo-root seeds),
+    `_resolve_seeds_dir` MUST raise with an actionable message
+    naming all three options. The previous behavior was to return
+    the non-existent repo_default and let the SeedLoadError
+    surface from inside a tool call — much harder to diagnose."""
+    import pytest
+
+    from whatcanirun.paths import _resolve_seeds_dir
+
+    # Empty env override.
+    monkeypatch.delenv("WHATCANIRUN_SEEDS_DIR", raising=False)
+    # Move paths.__file__ into a tmp dir that has neither a sibling
+    # `seeds/` (packaged) nor a grandparent-parent's-parent `seeds/`
+    # (repo-root). Simulating this without restructuring imports is
+    # awkward, so instead we patch the resolver to look in `tmp_path`
+    # for both candidate locations.
+    fake_paths_file = tmp_path / "src" / "whatcanirun" / "paths.py"
+    fake_paths_file.parent.mkdir(parents=True)
+    fake_paths_file.touch()
+    monkeypatch.setattr("whatcanirun.paths.__file__", str(fake_paths_file))
+
+    with pytest.raises(RuntimeError, match="could not locate a seeds directory"):
+        _resolve_seeds_dir()
+
+
 def test_no_env_falls_back_to_existing_seeds_dir() -> None:
     """In the dev environment (where these tests run), the
     `<repo_root>/seeds` directory exists. With no env override and
