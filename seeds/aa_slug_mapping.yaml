@@ -135,3 +135,7 @@
     - aa_slug: gpt-oss-120b-low
       reasoning_effort: "low"
   investigation_note: "Live-data smoke test target for M07 reasoning-effort dimension acceptance — AA tracks base + low-effort variant; -medium/-high don't exist in 2026-05-27 capture so the synthetic-data unit tests pin those branches and this row pins the (None vs low) live-data discrimination."
+
+- cp_slug: qwen-3-coder-30b
+  aa_slugs: []
+  investigation_note: "Added to tracked_models in M10 PR-alpha for Slice D Phase 1 bench-cell coverage. AA does not appear to track Qwen3-Coder-30B as a distinct row in the 2026-05-30 capture (the closest match 'qwen3-30b' is the general model, not the coder variant). Leaving aa_slugs empty per the seed convention — if a future AA capture adds the coder slug, update this row in the same PR."
