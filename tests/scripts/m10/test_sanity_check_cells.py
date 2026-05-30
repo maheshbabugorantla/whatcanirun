@@ -18,6 +18,9 @@ from typing import Any
 import pytest
 from scripts.m10.sanity_check_cells import (
     CheckResult,
+    check_engine_version_format,
+    check_measured_at_recency,
+    check_methodology_complete,
     check_source_url_well_formed,
 )
 
@@ -96,6 +99,160 @@ class TestSourceUrlWellFormed:
         result = check_source_url_well_formed(cell)
         assert result.severity == "error"
         assert "host" in result.message.lower() or "netloc" in result.message.lower()
+
+
+# ---------------------------------------------------------------- check_engine_version_format
+
+
+class TestEngineVersionFormat:
+    """`engine_version` must be semver-shaped: `MAJOR.MINOR` with
+    an optional patch suffix that's either a digit or the literal
+    `.x` (vLLM commonly publishes blog-post numbers as `0.6.x`
+    without committing to a patch — this is fine; `latest`, `main`,
+    `dev`, and empty strings are not). Catches the "stale numbers"
+    pitfall up front: a cell tagged `latest` today means something
+    different next quarter, breaking auditability."""
+
+    def test_simple_major_minor_passes(self) -> None:
+        cell = _valid_cell(engine_version="0.6")
+        result = check_engine_version_format(cell)
+        assert result.severity == "pass"
+
+    def test_major_minor_patch_passes(self) -> None:
+        cell = _valid_cell(engine_version="0.6.3")
+        result = check_engine_version_format(cell)
+        assert result.severity == "pass"
+
+    def test_major_minor_x_passes(self) -> None:
+        # vLLM 0.6.x convention.
+        cell = _valid_cell(engine_version="0.6.x")
+        result = check_engine_version_format(cell)
+        assert result.severity == "pass"
+
+    def test_latest_errors(self) -> None:
+        cell = _valid_cell(engine_version="latest")
+        result = check_engine_version_format(cell)
+        assert result.severity == "error"
+        assert "engine_version" in result.message
+
+    def test_main_errors(self) -> None:
+        cell = _valid_cell(engine_version="main")
+        result = check_engine_version_format(cell)
+        assert result.severity == "error"
+
+    def test_empty_errors(self) -> None:
+        cell = _valid_cell(engine_version="")
+        result = check_engine_version_format(cell)
+        assert result.severity == "error"
+
+
+# ---------------------------------------------------------------- check_measured_at_recency
+
+
+class TestMeasuredAtRecency:
+    """`measured_at` should be within the last 18 months of TODAY.
+    Older numbers correspond to older engine versions, older drivers,
+    older PyTorch — they're not wrong, but they're less applicable
+    to today's stacks and warrant a warning so the curator can
+    decide whether to keep the cell.
+
+    `_today` is injected so tests are deterministic across calendars."""
+
+    def test_recent_date_passes(self) -> None:
+        cell = _valid_cell(measured_at=dt.date(2026, 4, 1))
+        result = check_measured_at_recency(cell, _today=dt.date(2026, 5, 30))
+        assert result.severity == "pass"
+
+    def test_just_under_18_months_passes(self) -> None:
+        # 17 months back from 2026-05-30 → 2024-12-30.
+        cell = _valid_cell(measured_at=dt.date(2024, 12, 30))
+        result = check_measured_at_recency(cell, _today=dt.date(2026, 5, 30))
+        assert result.severity == "pass"
+
+    def test_just_over_18_months_warns(self) -> None:
+        # 19 months back from 2026-05-30 → 2024-10-30.
+        cell = _valid_cell(measured_at=dt.date(2024, 10, 30))
+        result = check_measured_at_recency(cell, _today=dt.date(2026, 5, 30))
+        assert result.severity == "warn"
+        assert "stale" in result.message.lower() or "months" in result.message.lower()
+
+    def test_future_date_errors(self) -> None:
+        # A future measured_at can't be a real measurement — almost
+        # certainly a typo. Hard error.
+        cell = _valid_cell(measured_at=dt.date(2027, 1, 1))
+        result = check_measured_at_recency(cell, _today=dt.date(2026, 5, 30))
+        assert result.severity == "error"
+        assert "future" in result.message.lower()
+
+
+# ---------------------------------------------------------------- check_methodology_complete
+
+
+class TestMethodologyComplete:
+    """`notes` must (a) be at least 30 chars (the spec requires a
+    1-2 sentence methodology summary, which is at least that long
+    when honest) AND (b) reference both the engine version AND the
+    batch size somewhere in the text. Catches the M10 pitfall:
+    "some 'benchmark' blog posts don't specify batch size or engine
+    version — skip those rows."
+
+    The check is strict about *mentioning* the values, not about
+    parsing them: any notes string that contains the literal
+    `engine_version` value and `batch=N` (or `batch_size=N`) passes.
+    """
+
+    def test_full_notes_passes(self) -> None:
+        cell = _valid_cell(
+            engine_version="0.6.x",
+            batch_size=1,
+            notes="Single H100 SXM, bf16, batch=1, ctx=4096. vLLM 0.6.x with paged_attention.",
+        )
+        result = check_methodology_complete(cell)
+        assert result.severity == "pass"
+
+    def test_too_short_errors(self) -> None:
+        cell = _valid_cell(notes="see source")
+        result = check_methodology_complete(cell)
+        assert result.severity == "error"
+        assert "notes" in result.message.lower() and (
+            "30" in result.message or "short" in result.message.lower()
+        )
+
+    def test_missing_engine_version_errors(self) -> None:
+        cell = _valid_cell(
+            engine_version="0.6.x",
+            notes=(
+                "Single H100 SXM, bf16, batch=1, ctx=4096. Reference run "
+                "from blog without engine version detail."
+            ),
+        )
+        result = check_methodology_complete(cell)
+        assert result.severity == "error"
+        assert "engine_version" in result.message
+
+    def test_missing_batch_errors(self) -> None:
+        cell = _valid_cell(
+            engine_version="0.6.x",
+            batch_size=1,
+            notes=(
+                "Single H100 SXM, bf16, ctx=4096. vLLM 0.6.x with "
+                "paged_attention. Reference run from blog."
+            ),
+        )
+        result = check_methodology_complete(cell)
+        assert result.severity == "error"
+        assert "batch" in result.message.lower()
+
+    def test_batch_size_keyword_form_passes(self) -> None:
+        # Some authors write `batch_size=4`, others `batch=4`. Both
+        # satisfy the "mentions batch" requirement.
+        cell = _valid_cell(
+            engine_version="0.6.x",
+            batch_size=4,
+            notes="H100 SXM, bf16, batch_size=4, ctx=4096. vLLM 0.6.x reference.",
+        )
+        result = check_methodology_complete(cell)
+        assert result.severity == "pass"
 
 
 # ---------------------------------------------------------------- shape tests
