@@ -130,7 +130,7 @@ _PROVENANCE = {
         "Reserved-instance or spot preemption probability.",
         "Hosted-API rate limits or per-key quota caps.",
     ],
-    "fall_back_behavior": {
+    "fallback_behavior": {
         "computeprices_unreachable": (
             "Server serves last-good local snapshot (30-day rolling window) "
             "with `freshness.computeprices` reflecting staleness."
