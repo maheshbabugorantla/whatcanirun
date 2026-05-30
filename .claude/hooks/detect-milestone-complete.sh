@@ -48,16 +48,42 @@ cmd=$(printf '%s' "$input" | jq -r '
   ""
 ' 2>/dev/null)
 
-# --- Only act on `git commit` invocations.
+# --- Trigger patterns. We act on three event families that can land
+# a milestone-flip commit:
+#
+#   1. `git commit ...` — local commit on the current branch (the
+#      original M00 design, used when a milestone flip lands in the
+#      same branch as the implementation work).
+#   2. `gh pr merge ...` — squash/merge happens on the GitHub side
+#      and the commit lands on origin/main; our local HEAD doesn't
+#      move until the next `git pull`, so we have to inspect
+#      origin/main rather than HEAD~1..HEAD.
+#   3. `git pull ...` / `git fetch ...` — brings the remote
+#      squash-merge commit into the local working tree; same
+#      origin/main inspection applies.
+#
+# All three converge on the same detection logic below; only the
+# `git_range` differs.
 case "$cmd" in
-  *"git commit"*) ;;
+  *"git commit"*) git_range="HEAD~1 HEAD" ;;
+  *"gh pr merge"*|*"git pull"*|*"git fetch"*) git_range="origin/main^ origin/main" ;;
   *) exit 0 ;;
 esac
 
 cd "$PROJECT_DIR" 2>/dev/null || exit 0
 
-# --- Inspect HEAD's diff against the previous commit. The
-# milestone-flip pattern is precisely:
+# --- For the remote-side triggers, we need an up-to-date view of
+# origin/main. `gh pr merge` writes to GitHub but does NOT
+# automatically fetch the result; ensure we see the latest before
+# diffing. `git fetch` itself triggers this branch too, in which
+# case the fetch already happened upstream of us — but the extra
+# fetch is idempotent and cheap.
+if [[ "$git_range" == "origin/main^ origin/main" ]]; then
+  git fetch origin main --quiet 2>/dev/null || exit 0
+fi
+
+# --- Inspect the chosen range's diff. The milestone-flip pattern
+# is precisely:
 #
 #     -| M{NN} | ... | ⬜ |
 #     +| M{NN} | ... | ✓ |
@@ -65,7 +91,7 @@ cd "$PROJECT_DIR" 2>/dev/null || exit 0
 # Both sides anchored on `| <symbol> |` at end-of-line. The order
 # (and pair-up) is enforced by requiring a removed `⬜` row AND
 # an added `✓` row in the same diff.
-diff=$(git diff HEAD~1 HEAD -- spec/INDEX.md 2>/dev/null || echo "")
+diff=$(git diff $git_range -- spec/INDEX.md 2>/dev/null || echo "")
 removed_unchecked=$(printf '%s' "$diff" | grep -E '^- *\|.*\| ⬜ \|$' | head -1)
 added_checked=$(printf '%s' "$diff" | grep -E '^\+ *\|.*\| ✓ \|$' | head -1)
 
