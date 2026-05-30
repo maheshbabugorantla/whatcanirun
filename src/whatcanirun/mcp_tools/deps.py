@@ -1,11 +1,20 @@
 """M09 Slice L (step 2): runtime dependency loader for the MCP tools.
 
-The cost-cells query layer wants 7 collections (gpu_prices,
-llm_prices, gpu_catalog, model_catalog, quantizations, bench_cells,
-aa_observations). Loading them on every tool call is acceptable
-at v1 scale (~ms latency to read disk + parse YAML/Parquet/JSON);
-M11 may add a module-level memoization layer if benchmarks
-demonstrate the need.
+The cost-cells query layer accepts 7 collections via
+`query_cost_cells(...)`. This module loads SIX of them into
+`RuntimeDeps`: gpu_prices, llm_prices, gpu_catalog, model_catalog,
+quantizations, bench_cells (plus the seed-backed
+workload_profiles + tracked_models that other tools need). The
+seventh — `aa_observations` — is intentionally NOT loaded here:
+M04's optional AA-anchored throughput enrichment is gated behind
+a user-supplied `AA_API_KEY` and is not part of M09's wiring.
+Every numerical tool passes `aa_observations=None` into
+`query_cost_cells` for now; an `aa_observations` slot is on the
+M07/M11 follow-up list when AA enrichment becomes load-bearing.
+
+Loading on every tool call is acceptable at v1 scale (~ms
+latency to read disk + parse YAML/Parquet/JSON); M11 may add a
+module-level memoization layer if benchmarks demonstrate the need.
 
 This module centralizes the loading so the 4 numerical tool
 wrappers (`fit_check`, `find_cheapest_deployment`,
