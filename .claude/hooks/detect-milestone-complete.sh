@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# whatcanirun — PostToolUse hook on Bash(git commit *).
+# whatcanirun — PostToolUse hook with matcher "Bash".
+#
+# The hook fires on every Bash tool call (the matcher in
+# `.claude/settings.local.json` is `"Bash"`, not a tighter
+# `Bash(git commit *)` form — Claude Code's matcher syntax
+# doesn't support command-pattern filtering, only tool name).
+# The script filters internally for `git commit` invocations
+# and exits 0 silently on everything else, so the hook is a
+# no-op for non-commit Bash calls.
 #
 # Detects when a git commit flips a milestone row in
 # `spec/INDEX.md` from ⬜ to ✓ and:
