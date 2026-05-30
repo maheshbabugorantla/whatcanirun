@@ -4,5 +4,18 @@
       "Bash(ssh *)",
       "Bash(rsync *)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/reload-after-compact.sh"
+          }
+        ]
+      }
+    ]
   }
 }
