@@ -168,14 +168,24 @@ async def render_current_cost_cells() -> bytes:
     cache path emits. The client always gets a valid parquet
     response.
     """
+    import asyncio
+
     from whatcanirun.mcp_tools.deps import RuntimeDeps, load_runtime_deps
 
     try:
         deps = await load_runtime_deps()
+    except asyncio.CancelledError:
+        # NEVER swallow cancellation — the FastMCP runtime cancels
+        # in-flight handlers on client disconnect; turning that into
+        # a silent empty render would have the server keep working
+        # on a result the client no longer wants. Re-raise so the
+        # cancellation propagates the way asyncio expects.
+        raise
     except Exception:
-        # Any escape from load_runtime_deps (HF cache corruption,
-        # an httpx error class M02 didn't wrap, etc.) collapses
-        # to an empty render rather than a failed resource read.
+        # Any other escape from load_runtime_deps (HF cache
+        # corruption, an httpx error class M02 didn't wrap, etc.)
+        # collapses to an empty render rather than a failed
+        # resource read, per ADR-013.
         deps = RuntimeDeps()
     return render_cost_cells_resource(
         gpu_prices=deps.gpu_prices,

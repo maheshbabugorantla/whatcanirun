@@ -30,6 +30,7 @@ response, not a numerical one.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Literal
 
@@ -400,11 +401,19 @@ async def dispatch_model_request(
                 kv_cache_strategy_override=tracked.kv_cache_strategy_override,
             )
             return Case1Resolved(model=model)
+        except asyncio.CancelledError:
+            # NEVER swallow cancellation — the FastMCP runtime
+            # cancels in-flight handlers on client disconnect;
+            # silently falling through would have the dispatcher
+            # keep doing work the client no longer wants. Re-raise
+            # so the cancellation propagates the way asyncio
+            # expects.
+            raise
         except Exception:
-            # Lazy-sync failed. Fall through to Case 2 / Case 3
-            # checks rather than raising — the user might still
-            # get a useful Case 2 answer, or at worst a clean
-            # elicitation.
+            # Other lazy-sync failures (network, 404, HF
+            # unreachable). Fall through to Case 2 / Case 3 checks
+            # rather than raising — the user might still get a
+            # useful Case 2 answer, or at worst a clean elicitation.
             pass
 
     # Case 2 — in CP llm catalog with at least one price row.
