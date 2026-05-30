@@ -28,11 +28,21 @@ from pathlib import Path
 
 def _resolve_seeds_dir() -> Path:
     """Pick the right seeds directory per the resolution order
-    in the module docstring. Raises `RuntimeError` with an
-    actionable message if NONE of the three options yields an
-    existing directory — the alternative was a non-existent path
-    surfacing later as `SeedLoadError` from inside a tool call,
-    which made the root cause much harder to diagnose."""
+    in the module docstring.
+
+    Raises `RuntimeError` with an actionable message when
+    `WHATCANIRUN_SEEDS_DIR` is unset or empty AND no packaged
+    `whatcanirun/seeds/` directory exists AND no `<repo-root>/seeds`
+    directory exists. The env-var override is returned WITHOUT
+    an existence check (the user may be pointing at a future
+    location); only the two implicit candidates require the
+    directory to exist before being returned.
+
+    The fail-fast on the all-implicit-candidates-missing case
+    surfaces a clear startup error pointing at the env var,
+    rather than letting the non-existent path leak into a tool
+    call and emerge as `SeedLoadError` / `FileNotFoundError` far
+    from the root cause."""
     # 1. Explicit env override — the wheel-install workaround.
     # Trust the user-supplied path even if it doesn't exist yet
     # (they may have set it pointing to a future location). Tools

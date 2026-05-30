@@ -217,15 +217,19 @@ async def test_resolve_updates_existing_pair_for_same_slug(
 
 
 @pytest.mark.asyncio
-async def test_resolve_returns_sync_failed_on_sync_error(
+async def test_resolve_returns_not_found_on_hf_on_404(
     user_config_dir: Path,
     stub_sync_404: AsyncMock,
     tmp_path: Path,
 ) -> None:
-    """When `HfModelSync.sync_model` raises (404, private repo,
-    network error), the tool returns `status='not_found_on_hf'`
-    rather than crashing. The error_detail field carries the
-    diagnostic so the LLM client can relay it to the user."""
+    """When `HfModelSync.sync_model` raises HTTP 404 (the supplied
+    repo_id is wrong, deleted, or private and the token can't
+    see it), the tool returns `status='not_found_on_hf'` rather
+    than crashing. The error_detail field carries the diagnostic
+    so the LLM client can relay it to the user. Distinct from the
+    network-layer / 5xx tests below, which return
+    `status='sync_failed'` since their recourse is 'retry later'
+    rather than 'check the repo_id'."""
     result = await resolve_model_to_user_yaml(
         model_slug="bogus",
         hf_repo_id="vendor/does-not-exist",
