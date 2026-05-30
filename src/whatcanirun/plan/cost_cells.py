@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from whatcanirun.catalog.benchmark_cells import BenchmarkCell
+from whatcanirun.catalog.benchmark_cells import BenchmarkCell, BenchmarkSource
 from whatcanirun.catalog.hf_model import Model
 from whatcanirun.catalog.seed_schemas import Quantization
 from whatcanirun.inference.fit_check import FitResult, compute_fit
@@ -544,7 +544,7 @@ def _anchor_last_updated(
     quant_slug: str,
     batch_size: int,
     context_length: int,
-    tier_source: str,
+    tier_source: BenchmarkSource,
     fallback: datetime,
 ) -> datetime:
     """Tier 1a/1b helper: return the matched BenchmarkCell's
@@ -582,7 +582,7 @@ def _find_matched_bench_cell(
     quant_slug: str,
     batch_size: int,
     context_length: int,
-    tier_source: str,
+    tier_source: BenchmarkSource,
 ) -> BenchmarkCell | None:
     """Find the BenchmarkCell row that M07's estimate_tps would
     have matched for this op-point and tier — used by the
