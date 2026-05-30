@@ -98,15 +98,27 @@ async def find_cheapest_deployment(
         dispatch_model_request,
     )
     from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
+    from whatcanirun.trust.builders import build_case_2_partial_cells
 
     deps = await load_runtime_deps()
     dispatched = await dispatch_model_request(model_slug, deps)
     if isinstance(dispatched, UnknownModelResponse):
         return dispatched
-    # Case 2 partial-CostCell construction lands in Commit D; for
-    # now find_cheapest_deployment proceeds only on Case 1.
+    # Case 2: CP-only model — build partial hosted_api_token CostCells
+    # per spec/M09 § Tool-by-tool Case 2 behavior. Each LlmPriceRow
+    # becomes one cell; the trust envelope carries
+    # model_architecture=0.0 + the Case 2 caveat so the LLM client
+    # surfaces the partial-data signal verbatim.
     if isinstance(dispatched, Case2HostedOnly):
-        return UnknownModelResponse(requested_model_slug=model_slug)
+        partial_cells = build_case_2_partial_cells(
+            model_slug=model_slug,
+            catalog_row=dispatched.catalog_row,
+            prices=dispatched.prices,
+            batch_size=batch_size,
+            context_length=context_length,
+            llm_prices_generated_at=deps.llm_prices_generated_at,
+        )
+        return find_cheapest_deployments(partial_cells, top_n=top_n)
     assert isinstance(dispatched, Case1Resolved)
 
     cells = query_cost_cells(

@@ -176,6 +176,7 @@ async def budget_to_plan(
         dispatch_model_request,
     )
     from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
+    from whatcanirun.trust.builders import build_case_2_partial_cells
 
     # Slice M: workload elicitation. Silent default would set
     # workload_assumption=0.2 and drag confidence to 0.2 anyway,
@@ -187,12 +188,9 @@ async def budget_to_plan(
     dispatched = await dispatch_model_request(model_slug, deps)
     if isinstance(dispatched, UnknownModelResponse):
         return dispatched
-    # Case 2 partial-row construction lands in Commit D; for now
-    # budget_to_plan proceeds only on Case 1.
-    if isinstance(dispatched, Case2HostedOnly):
-        return UnknownModelResponse(requested_model_slug=model_slug)
-    assert isinstance(dispatched, Case1Resolved)
-
+    # Workload lookup runs after dispatch so the user gets the
+    # dispatch routing answer (UnknownModelResponse / Case 2 cells)
+    # before a workload typo can mask it.
     workload = next(
         (w for w in deps.workload_profiles if w.slug == workload_profile_slug),
         None,
@@ -202,6 +200,30 @@ async def budget_to_plan(
             f"workload_profile_slug {workload_profile_slug!r} not found. "
             "Call list_catalog to see supported workload profiles."
         )
+    # Case 2: build partial hosted_api_token cells, then feed them
+    # to the same build_budget_plan pipeline the Case 1 path uses.
+    # The trust envelope carries model_architecture=0.0 + the Case 2
+    # caveat AND workload_assumption=0.95 (because the prompt count
+    # is still workload-derived).
+    if isinstance(dispatched, Case2HostedOnly):
+        partial_cells = build_case_2_partial_cells(
+            model_slug=model_slug,
+            catalog_row=dispatched.catalog_row,
+            prices=dispatched.prices,
+            # batch_size + context_length aren't tool args here; use
+            # the same defaults as find_cheapest_deployment so the
+            # CostCell shape stays comparable across tools.
+            batch_size=1,
+            context_length=4096,
+            llm_prices_generated_at=deps.llm_prices_generated_at,
+        )
+        return build_budget_plan(
+            budget_usd=budget_usd,
+            cells=partial_cells,
+            workload=workload,
+            top_n=top_n,
+        )
+    assert isinstance(dispatched, Case1Resolved)
 
     cells = query_cost_cells(
         gpu_prices=deps.gpu_prices,

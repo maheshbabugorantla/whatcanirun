@@ -37,6 +37,7 @@ from whatcanirun.catalog.hf_model import Model
 from whatcanirun.pricing.projections import (
     GpuCatalogRow,
     GpuPriceRow,
+    LlmCatalogRow,
     LlmPriceRow,
 )
 from whatcanirun.server import mcp
@@ -229,7 +230,32 @@ def cp_warm(monkeypatch: Any) -> dict[str, list[Any]]:
         ),
     ]
     gpu_catalog = [_build_gpu_catalog()]
-    llm_catalog: list[Any] = []
+    # Per spec/M09 § Case 2, dispatcher requires the slug to be in
+    # BOTH `llm_catalog` (existence) AND `llm_prices` (the price
+    # quotes). Populate both with the CP-only model so the Case 2
+    # dispatch fires in the test scenarios that exercise it.
+    llm_catalog = [
+        LlmCatalogRow(
+            slug="cp-only-hosted-model",
+            name="CP-only Hosted Model",
+            creator="some-vendor",
+            family=None,
+            context_window=8192,
+            modalities=["text"],
+            knowledge_cutoff=None,
+            raw={},
+        ),
+        LlmCatalogRow(
+            slug="qwen-3-coder-30b",
+            name="Qwen 3 Coder 30B",
+            creator="qwen",
+            family="qwen",
+            context_window=131072,
+            modalities=["text"],
+            knowledge_cutoff=None,
+            raw={},
+        ),
+    ]
 
     async def _gpu_prices(*args: Any, **kwargs: Any) -> list[GpuPriceRow]:
         return gpu_prices
@@ -607,20 +633,29 @@ async def test_user_asks_about_cp_only_model_for_pricing(
             {"model_slug": "cp-only-hosted-model"},
         )
         payload = _unwrap(result)
-        # Acceptable: a list of hosted_api_token CostCells.
-        # NOT acceptable: UnknownModelResponse (spec violation).
+        # Spec/M09 § Tool-by-tool Case 2 behavior: hosted_api_token
+        # cells only. UnknownModelResponse here would be a spec
+        # violation — the CP-only model HAS pricing the user can
+        # act on, and refusing to surface it loses real value.
         if isinstance(payload, dict) and payload.get("status") == "unknown_model":
-            pytest.xfail(
-                "Case 2 partial-cell construction not implemented — "
-                "find_cheapest_deployment returns UnknownModelResponse for "
-                "CP-only models. Spec/M09 § Tool-by-tool Case 2 behavior "
-                "requires partial hosted_api_token cells here."
+            pytest.fail(
+                "Case 2 partial-cell construction missing — "
+                "find_cheapest_deployment returned UnknownModelResponse "
+                "for a CP-only model that has hosted-API pricing."
             )
-        # If implementation lands, the rows are all hosted-API mode.
-        assert payload
+        assert payload, "no rows returned for CP-only model"
         for row in payload:
             row_dict = _as_dict(row)
             assert row_dict["deployment_mode"] == "hosted_api_token"
+            # Spec: model_architecture=0.0 so the LLM client knows
+            # this is partial data.
+            breakdown = row_dict["trust_envelope"]["confidence_breakdown"]
+            assert breakdown.get("model_architecture") == 0.0
+            # The verbatim Case 2 caveat travels with each row.
+            assert any(
+                "Architecture data not available" in c
+                for c in row_dict["trust_envelope"]["caveats"]
+            )
 
 
 # ---------- "What models do you support?"

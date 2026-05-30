@@ -19,8 +19,9 @@ import datetime as dt
 from whatcanirun.catalog.hf_model import Model
 from whatcanirun.catalog.workload import WorkloadProfile
 from whatcanirun.inference.fit_check import FitResult
+from whatcanirun.inference.tps_estimator import TpsEstimate
 from whatcanirun.plan.cost_cells import CostCell
-from whatcanirun.pricing.projections import GpuCatalogRow
+from whatcanirun.pricing.projections import GpuCatalogRow, LlmCatalogRow, LlmPriceRow
 from whatcanirun.trust.calibration import (
     combine_freshness,
     fit_check_methodology_confidence,
@@ -47,6 +48,26 @@ _WORKLOAD_CAVEAT = (
     "est_total_prompts and cost_per_prompt are conditioned on the named "
     "workload_profile. Real traffic with a different (avg_input_tokens, "
     "avg_output_tokens) shape will yield different counts."
+)
+
+# Spec/M09 § Case 2: the exact caveat text that travels with every
+# Case 2 partial CostCell. The verbatim wording is part of the
+# trust contract — softening or paraphrasing would let a CP-only
+# answer look more complete than it is.
+_CASE_2_CAVEAT = (
+    "Architecture data not available for this model — only hosted-API "
+    "pricing is shown. Fit-check and self-hosted throughput are not "
+    "estimated. To enable full analysis, add an entry to your local "
+    "`~/.config/whatcanirun/user_models.yaml` with the model's "
+    "Hugging Face `repo_id`."
+)
+
+# Refusal reason populated on every Case 2 cell's TpsEstimate so the
+# LLM client (per spec/M09 relay rule 2) can explain why no throughput
+# number came back.
+_CASE_2_REFUSAL_REASON = (
+    "Architecture data unavailable for CP-only model; throughput "
+    "requires HF config.json to compute single-stream bandwidth bound."
 )
 
 
@@ -222,6 +243,116 @@ def build_budget_plan_envelope(
 
 
 # ============================================================ comparison
+
+
+# ============================================================ Case 2 partial
+
+
+def _build_case_2_envelope(
+    *,
+    price: LlmPriceRow,
+    generated_at: dt.datetime,
+) -> TrustEnvelope:
+    """Build the trust envelope for one Case 2 partial CostCell.
+
+    Per spec/M09 § Case 2, the envelope carries:
+    - `model_architecture` = 0.0 (we have NO architecture data)
+    - `pricing` derived from CP freshness
+    - `freshness` derived from CP `meta.generated_at`
+    - the verbatim Case 2 caveat
+    - the default availability caveat is on the CostCell itself
+
+    `assumptions` includes the LLM hosted-API pricing tier (CP's
+    `pricing_type`) — spec/M09 calls out that the hosted-API tier
+    can't ride in the CostCell's `pricing_type` field (which is
+    the GPU `on_demand|spot` enum), so it travels here instead."""
+    age = dt.datetime.now(dt.UTC) - generated_at if generated_at else dt.timedelta.max
+    pricing_score = freshness_confidence("computeprices", age)
+
+    breakdown: dict[ConfidenceDomain, float] = {
+        "model_architecture": 0.0,  # we have NO architecture data
+        "pricing": pricing_score,
+        "freshness": pricing_score,
+    }
+
+    return TrustEnvelope(
+        sources=[
+            Source(
+                name="computeprices",
+                detail=(
+                    f"llm-prices entry for model_slug={price.model_slug}, "
+                    f"provider_slug={price.provider_slug}"
+                ),
+                last_updated=price.last_updated,
+            )
+        ],
+        confidence_breakdown=breakdown,
+        assumptions={"llm_pricing_tier": price.pricing_type},
+        caveats=[_CASE_2_CAVEAT],
+        freshness={"computeprices": price.last_updated},
+        verify_links=["https://www.computeprices.com/api/v1/llm-prices"],
+    )
+
+
+def build_case_2_partial_cells(
+    *,
+    model_slug: str,
+    catalog_row: LlmCatalogRow,
+    prices: list[LlmPriceRow],
+    batch_size: int,
+    context_length: int,
+    llm_prices_generated_at: dt.datetime,
+) -> list[CostCell]:
+    """Build hosted_api_token-only CostCells from CP llm_prices
+    for a model that's CP-known but not in our tracked-models set
+    (spec/M09 § Case 2). One CostCell per `LlmPriceRow` (each row
+    is one provider's quote for the same model).
+
+    Per spec/M09 § Case 2 field map:
+    - `gpu_slug`, `quant_slug`, `tp_size`, `hourly_usd`,
+      `pricing_type`, `decode_tps`, `fit_result`,
+      `cost_per_m_output_usd_self_hosted` all `None`
+    - `price_per_m_input_usd` / `price_per_m_output_usd` from the
+      CP price row
+    - `tps_estimate.source = "requires_measurement"`,
+      `confidence = 0.0`, `refusal_reason` cites the architecture gap
+    - `availability_modeled = False`
+    - `trust_envelope.confidence_breakdown["model_architecture"] = 0.0`
+    - `trust_envelope.caveats` carries the verbatim Case 2 prose
+    """
+    _ = catalog_row  # echoed back to callers via deps; not in CostCell
+    cells: list[CostCell] = []
+    for price in prices:
+        cells.append(
+            CostCell(
+                gpu_slug=None,
+                provider_slug=price.provider_slug,
+                model_slug=model_slug,
+                quant_slug=None,
+                tp_size=None,
+                batch_size=batch_size,
+                context_length=context_length,
+                deployment_mode="hosted_api_token",
+                hourly_usd=None,
+                pricing_type=None,
+                price_per_m_input_usd=price.price_per_1m_input_usd,
+                price_per_m_output_usd=price.price_per_1m_output_usd,
+                decode_tps=None,
+                tps_estimate=TpsEstimate(
+                    value=None,
+                    source="requires_measurement",
+                    confidence=0.0,
+                    refusal_reason=_CASE_2_REFUSAL_REASON,
+                ),
+                fit_result=None,
+                cost_per_m_output_usd_self_hosted=None,
+                availability_modeled=False,
+                trust_envelope=_build_case_2_envelope(
+                    price=price, generated_at=llm_prices_generated_at
+                ),
+            )
+        )
+    return cells
 
 
 def build_deployment_comparison_envelope(
