@@ -170,7 +170,11 @@ async def budget_to_plan(
         catalog (Case 2 partial-cell support is M11 follow-up)
     """
     from whatcanirun.mcp_tools.deps import load_runtime_deps
-    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+    from whatcanirun.mcp_tools.dispatch import (
+        Case1Resolved,
+        Case2HostedOnly,
+        dispatch_model_request,
+    )
     from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
 
     # Slice M: workload elicitation. Silent default would set
@@ -180,8 +184,14 @@ async def budget_to_plan(
         return WorkloadElicitationResponse(requested_model_slug=model_slug)
 
     deps = await load_runtime_deps()
-    if find_model_in_catalog(model_slug, deps) is None:
+    dispatched = await dispatch_model_request(model_slug, deps)
+    if isinstance(dispatched, UnknownModelResponse):
+        return dispatched
+    # Case 2 partial-row construction lands in Commit D; for now
+    # budget_to_plan proceeds only on Case 1.
+    if isinstance(dispatched, Case2HostedOnly):
         return UnknownModelResponse(requested_model_slug=model_slug)
+    assert isinstance(dispatched, Case1Resolved)
 
     workload = next(
         (w for w in deps.workload_profiles if w.slug == workload_profile_slug),

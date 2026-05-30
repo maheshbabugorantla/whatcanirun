@@ -217,31 +217,151 @@ async def resolve_model(
 # § Unknown model handling.
 
 
+# Local-scope imports (kept below the response types) to avoid
+# circular init order with `mcp_tools.deps`, which itself imports
+# Pydantic shapes from `pricing.projections`.
+from dataclasses import dataclass  # noqa: E402
+
+from whatcanirun.catalog.hf_model import Model  # noqa: E402
+from whatcanirun.catalog.seed_schemas import TrackedModelRow  # noqa: E402
+from whatcanirun.mcp_tools.deps import RuntimeDeps  # noqa: E402
+from whatcanirun.pricing.projections import LlmCatalogRow, LlmPriceRow  # noqa: E402
+
+
 def find_model_in_catalog(model_slug: str, deps: RuntimeDeps) -> Model | None:
-    """Case 1 lookup: is the model in the cached HF catalog?
-    Returns the Model on match, None otherwise."""
+    """Case 1a lookup: is the model in the cached HF catalog?
+    Returns the Model on match, None otherwise. No I/O — just a
+    list scan."""
     for model in deps.model_catalog:
         if model.slug == model_slug:
             return model
     return None
 
 
+def find_tracked_row(model_slug: str, deps: RuntimeDeps) -> TrackedModelRow | None:
+    """Case 1b precondition: is the slug in the merged tracked-
+    models set (seeds + user_models.yaml)? If yes, the dispatcher
+    knows the slug→repo_id mapping and can lazy-sync via HF."""
+    for row in deps.tracked_models:
+        if row.slug == model_slug:
+            return row
+    return None
+
+
 def find_in_cp_llm_catalog(model_slug: str, deps: RuntimeDeps) -> LlmCatalogRow | None:
     """Case 2 lookup: is the model in CP's hosted-API catalog
     (`/api/v1/llm-models`) even though we don't have HF
-    architecture data for it? Returns the row on match, None
-    otherwise."""
+    architecture data for it?"""
     for row in deps.llm_catalog:
         if row.slug == model_slug:
             return row
     return None
 
 
-# Imports moved here to avoid circular imports; the type-only
-# references above are forward-strings until this point.
-from whatcanirun.catalog.hf_model import Model  # noqa: E402
-from whatcanirun.mcp_tools.deps import RuntimeDeps  # noqa: E402
-from whatcanirun.pricing.projections import LlmCatalogRow  # noqa: E402
+def find_cp_llm_prices(model_slug: str, deps: RuntimeDeps) -> list[LlmPriceRow]:
+    """Case 2 supplement: the per-provider LlmPriceRows for the
+    slug. The Case 2 partial-cell constructor builds one CostCell
+    per row."""
+    return [row for row in deps.llm_prices if row.model_slug == model_slug]
+
+
+@dataclass(frozen=True)
+class Case1Resolved:
+    """The model is locally available (either was cached or just
+    got lazy-synced). The tool proceeds with `model` exactly as
+    if Case 1a had been a cache hit."""
+
+    model: Model
+
+
+@dataclass(frozen=True)
+class Case2HostedOnly:
+    """The model is in CP's hosted-API catalog but not in our
+    tracked-models set. Tools that support partial cells
+    (`find_cheapest_deployment`, `budget_to_plan`) build hosted-
+    only CostCells from `prices`; tools that don't (`fit_check`,
+    `compare_deployment_modes`) collapse this to Case 3 per
+    spec/M09 § Tool-by-tool Case 2 behavior."""
+
+    catalog_row: LlmCatalogRow
+    prices: list[LlmPriceRow]
+
+
+# Discriminated union — the dispatcher returns exactly one of the
+# three cases. Tool wrappers branch on `isinstance` to pick the
+# right path; the unknown case is the same `UnknownModelResponse`
+# that travels back to the LLM client unchanged.
+DispatchResult = Case1Resolved | Case2HostedOnly | UnknownModelResponse
+
+
+async def dispatch_model_request(
+    model_slug: str,
+    deps: RuntimeDeps,
+    *,
+    cache_dir: Path | None = None,
+    hf_token: str | None = None,
+) -> DispatchResult:
+    """Spec/M09 § Unknown model handling — the three-case router
+    every numerical tool runs first.
+
+    1. Case 1a — model in `deps.model_catalog` (HF cache hit) →
+       `Case1Resolved` immediately
+    2. Case 1b — slug in `deps.tracked_models` but not yet cached
+       → lazy-sync via `HfModelSync.sync_model`, then
+       `Case1Resolved` with the freshly-synced Model
+    3. Case 2 — slug in CP's `llm_catalog` (and at least one
+       matching `llm_prices` row) → `Case2HostedOnly`
+    4. Case 3 — none of the above → `UnknownModelResponse`
+
+    If lazy-sync (case 1b) raises (network, 404, HF unreachable),
+    we DON'T crash — we fall through to the Case 2 / Case 3
+    checks. A CP-only fallback may still answer the user's
+    question; a genuine unknown still gets a clean elicitation
+    at the next turn. The user always sees a structured response,
+    never a raw exception."""
+    # Case 1a — cached HF model, fastest path.
+    model = find_model_in_catalog(model_slug, deps)
+    if model is not None:
+        return Case1Resolved(model=model)
+
+    # Case 1b — tracked but not cached, lazy-sync.
+    tracked = find_tracked_row(model_slug, deps)
+    if tracked is not None:
+        # Local import: keeps test-time `monkeypatch.setattr` on
+        # the `HfModelSync.sync_model` class method effective. The
+        # existing `resolve_model_to_user_yaml` uses the same
+        # pattern for the same reason.
+        from whatcanirun.catalog.hf_sync import HfModelSync
+
+        cache_dir = cache_dir or USER_CACHE_DIR
+        sync = HfModelSync(cache_dir=cache_dir, hf_token=hf_token)
+        try:
+            model = await sync.sync_model(
+                slug=tracked.slug,
+                repo_id=tracked.hf_repo_id,
+                display_name=tracked.display_name,
+                total_params_b=tracked.total_params_b,
+                active_params_b=tracked.active_params_b,
+                kv_cache_strategy_override=tracked.kv_cache_strategy_override,
+            )
+            return Case1Resolved(model=model)
+        except Exception:
+            # Lazy-sync failed. Fall through to Case 2 / Case 3
+            # checks rather than raising — the user might still
+            # get a useful Case 2 answer, or at worst a clean
+            # elicitation.
+            pass
+
+    # Case 2 — in CP llm catalog with at least one price row.
+    cp_row = find_in_cp_llm_catalog(model_slug, deps)
+    if cp_row is not None:
+        prices = find_cp_llm_prices(model_slug, deps)
+        if prices:
+            return Case2HostedOnly(catalog_row=cp_row, prices=prices)
+
+    # Case 3 — genuinely unknown.
+    return UnknownModelResponse(requested_model_slug=model_slug)
+
 
 # ============================================================ Workload elicit
 # Slice M: when `budget_to_plan` is called without

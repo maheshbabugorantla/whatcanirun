@@ -792,27 +792,32 @@ async def test_user_asks_about_seeds_tracked_model_with_cold_hf_cache(
     behavior the reviewer flagged."""
     config_dir = tmp_path / "config"
     cache_dir = tmp_path / "cache"
-    # NB: NO _write_hf_cache call. The slug is in seeds/tracked_models.yaml
-    # but no HF cache file exists yet.
+    # NB: NO _write_hf_cache call. `llama-3-3-70b` is in
+    # seeds/tracked_models.yaml but no HF cache file exists yet —
+    # exactly the state Case 1b is meant to handle.
     _redirect_xdg(monkeypatch, config_dir=config_dir, cache_dir=cache_dir)
 
     async with Client(transport=mcp) as client:
         result = await client.call_tool(
             "fit_check",
             {
-                "model_slug": "qwen-3-coder-30b",
+                "model_slug": "llama-3-3-70b",
                 "gpu_slug": "h100sxm",
                 "quant_slug": "fp8",
             },
         )
         payload = _unwrap(result)
+        # Case 1b: the dispatcher must consult tracked_models and
+        # trigger HfModelSync.sync_model. The stub records the
+        # slug it was called with — its presence is the proof
+        # that the lazy-sync path ran end-to-end.
         if isinstance(payload, dict) and payload.get("status") == "unknown_model":
-            pytest.xfail(
-                "Case 1 lazy-sync not implemented — the dispatcher returns "
+            pytest.fail(
+                "Case 1 lazy-sync still missing — fit_check returned "
                 "UnknownModelResponse for a seeds-tracked model with cold "
-                "HF cache instead of triggering HfModelSync.sync_model. "
-                "Spec/M09 § Case 1 requires lazy-sync here. Tracked as the "
-                "review's critical finding #1."
+                "HF cache instead of triggering HfModelSync.sync_model."
             )
-        # If implementation lands, the call succeeds and the stub was used.
-        assert "qwen-3-coder-30b" in hf_sync_success
+        assert "llama-3-3-70b" in hf_sync_success, (
+            "the lazy-sync stub was never called — Case 1b dispatcher "
+            "didn't route through HfModelSync.sync_model"
+        )

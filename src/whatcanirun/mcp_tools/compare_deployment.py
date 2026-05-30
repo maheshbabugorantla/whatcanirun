@@ -151,12 +151,23 @@ async def compare_deployment_modes(
     from datetime import UTC, datetime
 
     from whatcanirun.mcp_tools.deps import load_runtime_deps
-    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+    from whatcanirun.mcp_tools.dispatch import (
+        Case1Resolved,
+        dispatch_model_request,
+    )
     from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
 
     deps = await load_runtime_deps()
-    if find_model_in_catalog(model_slug, deps) is None:
-        return UnknownModelResponse(requested_model_slug=model_slug)
+    dispatched = await dispatch_model_request(model_slug, deps)
+    # compare_deployment_modes needs the cloud side, which needs
+    # architecture data. Case 2 collapses to Case 3 here per
+    # spec/M09 § Tool-by-tool Case 2 behavior.
+    if not isinstance(dispatched, Case1Resolved):
+        return (
+            dispatched
+            if isinstance(dispatched, UnknownModelResponse)
+            else UnknownModelResponse(requested_model_slug=model_slug)
+        )
 
     workload = next(
         (w for w in deps.workload_profiles if w.slug == workload_profile_slug),

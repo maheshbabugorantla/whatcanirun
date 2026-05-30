@@ -110,13 +110,24 @@ async def fit_check(
     from datetime import UTC, datetime
 
     from whatcanirun.mcp_tools.deps import load_runtime_deps
-    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+    from whatcanirun.mcp_tools.dispatch import (
+        Case1Resolved,
+        dispatch_model_request,
+    )
 
     deps = await load_runtime_deps()
-    model = find_model_in_catalog(model_slug, deps)
-    if model is None:
-        # Case 2 (CP-only) and Case 3 both collapse here for fit_check.
-        return UnknownModelResponse(requested_model_slug=model_slug)
+    dispatched = await dispatch_model_request(model_slug, deps)
+    # fit_check requires architecture data — Case 2 (CP-only) and
+    # Case 3 both collapse to UnknownModelResponse per spec/M09 §
+    # Tool-by-tool Case 2 behavior. Only Case 1 (cached OR just
+    # lazy-synced) proceeds.
+    if not isinstance(dispatched, Case1Resolved):
+        return (
+            dispatched
+            if isinstance(dispatched, UnknownModelResponse)
+            else UnknownModelResponse(requested_model_slug=model_slug)
+        )
+    model = dispatched.model
 
     gpu = next((g for g in deps.gpu_catalog if g.slug == gpu_slug), None)
     if gpu is None:
