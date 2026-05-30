@@ -17,10 +17,12 @@ from typing import Any
 
 import pytest
 from scripts.m10.sanity_check_cells import (
+    CheckContext,
     CheckResult,
     check_engine_version_format,
     check_measured_at_recency,
     check_methodology_complete,
+    check_op_point_unique,
     check_source_url_well_formed,
 )
 
@@ -252,6 +254,67 @@ class TestMethodologyComplete:
             notes="H100 SXM, bf16, batch_size=4, ctx=4096. vLLM 0.6.x reference.",
         )
         result = check_methodology_complete(cell)
+        assert result.severity == "pass"
+
+
+# ---------------------------------------------------------------- check_op_point_unique
+
+
+class TestOpPointUnique:
+    """Reject candidate rows whose op-point key
+    `(gpu_slug, model_slug, quant_slug, tp_size, batch_size, context_length)`
+    already exists in the canonical parquet. Forces the curator
+    to be explicit about overriding an existing cell rather than
+    silently shadowing one. If a re-measurement legitimately
+    supersedes an old cell, the curator must delete the old row
+    in the same PR."""
+
+    def test_unique_op_point_passes(self) -> None:
+        cell = _valid_cell(gpu_slug="h200", model_slug="llama-3-3-70b", quant_slug="fp8")
+        existing = [_valid_cell(gpu_slug="h100", model_slug="llama-3-3-70b", quant_slug="fp8")]
+        ctx = CheckContext(existing_cells=existing)
+        result = check_op_point_unique(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_exact_op_point_collision_errors(self) -> None:
+        cell = _valid_cell(
+            gpu_slug="h100",
+            model_slug="llama-3-3-70b",
+            quant_slug="fp8",
+            tp_size=1,
+            batch_size=1,
+            context_length=4096,
+        )
+        existing = [
+            _valid_cell(
+                gpu_slug="h100",
+                model_slug="llama-3-3-70b",
+                quant_slug="fp8",
+                tp_size=1,
+                batch_size=1,
+                context_length=4096,
+                decode_tps=999.0,
+            )
+        ]
+        ctx = CheckContext(existing_cells=existing)
+        result = check_op_point_unique(cell, ctx)
+        assert result.severity == "error"
+        assert "op-point" in result.message.lower() or "duplicate" in result.message.lower()
+
+    def test_same_model_different_batch_passes(self) -> None:
+        # batch_size is part of the op-point key; same model with
+        # different batch is a legitimate new op-point.
+        cell = _valid_cell(batch_size=8)
+        existing = [_valid_cell(batch_size=1)]
+        ctx = CheckContext(existing_cells=existing)
+        result = check_op_point_unique(cell, ctx)
+        assert result.severity == "pass"
+
+    def test_empty_existing_passes(self) -> None:
+        # First-ever cell with that op-point.
+        cell = _valid_cell()
+        ctx = CheckContext(existing_cells=[])
+        result = check_op_point_unique(cell, ctx)
         assert result.severity == "pass"
 
 

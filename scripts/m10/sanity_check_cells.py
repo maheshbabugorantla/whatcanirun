@@ -46,6 +46,17 @@ class CheckResult:
     message: str
 
 
+@dataclass(frozen=True)
+class CheckContext:
+    """Side-data the catalog-aware checks need. Grows as later
+    cycles land catalog-join checks (gpu_catalog, quantizations,
+    tracked_models go here next). Frozen so a single context can
+    be threaded safely across every cell in a candidate file
+    without checks mutating shared state."""
+
+    existing_cells: list[BenchmarkCell]
+
+
 # ---------------------------------------------------------------- checks
 
 
@@ -163,3 +174,39 @@ def check_methodology_complete(cell: BenchmarkCell) -> CheckResult:
             ),
         )
     return CheckResult(severity="pass", message="notes contains required methodology fields")
+
+
+def _op_point_key(cell: BenchmarkCell) -> tuple[str, str, str, int, int, int]:
+    """The six-tuple that BenchmarkCell uses as its primary key
+    for tps_estimator Tier 1b matching. Two cells with the same
+    key but different decode_tps are an ambiguity the tool path
+    can't resolve without a tiebreaker."""
+    return (
+        cell.gpu_slug,
+        cell.model_slug,
+        cell.quant_slug,
+        cell.tp_size,
+        cell.batch_size,
+        cell.context_length,
+    )
+
+
+def check_op_point_unique(cell: BenchmarkCell, ctx: CheckContext) -> CheckResult:
+    """Reject candidate cells whose op-point key already exists in
+    the canonical parquet. The Tier 1b matcher takes the first
+    match it finds, so silently shadowing an existing row is
+    behavior the curator must opt into explicitly (by deleting the
+    old row in the same PR). Errors here are blocking."""
+    key = _op_point_key(cell)
+    for existing in ctx.existing_cells:
+        if _op_point_key(existing) == key:
+            return CheckResult(
+                severity="error",
+                message=(
+                    f"duplicate op-point {key!r} already in the canonical "
+                    f"parquet (existing decode_tps={existing.decode_tps}, "
+                    f"candidate decode_tps={cell.decode_tps}). If this is "
+                    f"a re-measurement, delete the existing row in the same PR."
+                ),
+            )
+    return CheckResult(severity="pass", message=f"op-point {key!r} is new to the parquet")
