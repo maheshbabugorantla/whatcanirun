@@ -70,13 +70,18 @@ def test_snapshot_has_all_five_catalog_lists(
     assert snapshot.providers, "providers list is empty"
 
 
-def test_gpus_carry_slug_vram_and_form_factor(
+def test_gpus_carry_slug_and_form_factor(
     gpu_prices: list[GpuPriceRow],
 ) -> None:
-    """Each GPU entry needs the fields a client renderable as a
+    """Each GPU entry needs the fields a client renders as a
     dropdown row. `slug` is the canonical identifier the user picks;
     `form_factor` (SXM/PCIe/NVL/OAM) disambiguates same-name SKUs
-    (H100 PCIe vs H100 SXM5 are different VRAM and bandwidth)."""
+    that differ in VRAM and bandwidth (e.g. H100 PCIe vs H100 SXM5).
+    VRAM itself is intentionally NOT on `GpuSummary` today — the
+    fit_check tool sources VRAM from `GpuCatalogRow` (CP's gpus
+    endpoint), not from the catalog dropdown, so this surface
+    stays minimal. Adding VRAM here would be a future enhancement
+    if the client UI needs to show it inline."""
     snapshot = build_catalog_snapshot(seeds_dir=SEEDS_DIR, gpu_prices=gpu_prices)
     sample = snapshot.gpus[0]
     assert sample.slug
