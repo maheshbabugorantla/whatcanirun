@@ -41,17 +41,25 @@ def empty_deps(monkeypatch: Any) -> RuntimeDeps:
     async def _fake_load(**kwargs: Any) -> RuntimeDeps:
         return deps
 
+    # Only the source-of-truth name is patched. Every tool module
+    # in this PR imports `load_runtime_deps` LAZILY (inside the
+    # async tool body, via `from whatcanirun.mcp_tools.deps import
+    # load_runtime_deps`), so the source-module patch is what
+    # those late `from` statements resolve against — patching the
+    # bound names is unnecessary today.
+    #
+    # IF a future refactor moves `from ... import load_runtime_deps`
+    # to a tool module's top-level imports, the lazy-binding
+    # assumption breaks: the bound copy in that tool's globals
+    # captures the unpatched function and the fixture silently
+    # has no effect there. The fix in that case is to extend this
+    # fixture with `monkeypatch.setattr("whatcanirun.mcp_tools.
+    # <tool_module>.load_runtime_deps", _fake_load)` for each
+    # tool that binds at import time.
     monkeypatch.setattr(
         "whatcanirun.mcp_tools.deps.load_runtime_deps",
         _fake_load,
     )
-    # Also patch the function as imported into each tool module's
-    # local namespace. The tool modules `from ... import
-    # load_runtime_deps` lazily inside the tool body, so the
-    # patch above (on the original module) is what the lazy import
-    # picks up — but if a future refactor binds the import at
-    # module top, this fixture still works because we patch the
-    # source-of-truth name.
     return deps
 
 
