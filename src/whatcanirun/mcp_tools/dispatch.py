@@ -138,19 +138,55 @@ async def resolve_model_to_user_yaml(
     _merge_user_yaml_row(yaml_path, slug=model_slug, hf_repo_id=hf_repo_id)
 
     sync = HfModelSync(cache_dir=cache_dir)
+    import httpx
+
+    sync_status: Literal["sync_failed", "not_found_on_hf"]
     try:
         model = await sync.sync_model(slug=model_slug, repo_id=hf_repo_id)
-    except Exception as exc:  # broad: network errors, 404s, timeout, etc.
-        # The HF sync failure modes are diverse (httpx.HTTPStatusError
-        # for 404 / 5xx, httpx.ConnectError, ValueError for
-        # malformed slugs). We collapse them to a single
-        # `not_found_on_hf` status for the user-facing response
-        # because the user's recourse is the same in every case:
-        # check the repo_id is correct + public, retry.
+    except httpx.HTTPStatusError as exc:
+        # 404 means the repo_id is wrong or private; the user's
+        # recourse is to fix the repo_id. 5xx means HF is having a
+        # bad day and a retry would likely succeed — a different
+        # message for a different recourse.
+        sync_status = "not_found_on_hf" if exc.response.status_code == 404 else "sync_failed"
+        return ResolveModelResult(
+            model_slug=model_slug,
+            hf_repo_id=hf_repo_id,
+            status=sync_status,
+            hf_revision_sha=None,
+            error_detail=f"HTTP {exc.response.status_code}: {exc}",
+        )
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        # Network-layer failures are transient — a retry might
+        # succeed. Surface them as `sync_failed` so the LLM client
+        # can offer "try again later" rather than the misleading
+        # "check the repo_id" the `not_found_on_hf` framing implies.
+        return ResolveModelResult(
+            model_slug=model_slug,
+            hf_repo_id=hf_repo_id,
+            status="sync_failed",
+            hf_revision_sha=None,
+            error_detail=f"{type(exc).__name__}: {exc}",
+        )
+    except ValueError as exc:
+        # `HfModelSync.sync_model` raises ValueError when the regex
+        # rejects a malformed slug or repo_id. The user's recourse
+        # is the same as 404 — the supplied identifier was wrong.
         return ResolveModelResult(
             model_slug=model_slug,
             hf_repo_id=hf_repo_id,
             status="not_found_on_hf",
+            hf_revision_sha=None,
+            error_detail=f"ValueError: {exc}",
+        )
+    except Exception as exc:
+        # Unrecognized failure mode — surface as `sync_failed` (the
+        # generic transient bucket) rather than `not_found_on_hf`
+        # which would falsely accuse the user's repo_id.
+        return ResolveModelResult(
+            model_slug=model_slug,
+            hf_repo_id=hf_repo_id,
+            status="sync_failed",
             hf_revision_sha=None,
             error_detail=f"{type(exc).__name__}: {exc}",
         )

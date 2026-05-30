@@ -140,8 +140,10 @@ async def fit_check(
         batch_size=batch_size,
         context_length=context_length,
         now=datetime.now(UTC),
-        # Without the CP meta.generated_at timestamp threaded through,
-        # use the freshest gpu_catalog row's last_updated as a
-        # conservative anchor. M11 may plumb generated_at through.
-        gpu_specs_last_updated=datetime.now(UTC),
+        # CP `meta.generated_at` threaded through `RuntimeDeps`. When
+        # unset (datetime.min from a cold-cache / no-network env), the
+        # freshness_confidence curve maps it to the lowest band — the
+        # honest "stale" signal rather than the spurious "just fetched"
+        # the now()-fallback used to produce.
+        gpu_specs_last_updated=deps.gpu_catalog_generated_at,
     )

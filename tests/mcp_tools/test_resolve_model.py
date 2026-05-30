@@ -260,6 +260,65 @@ def test_unknown_model_response_includes_suggested_followups() -> None:
     assert any("list_catalog" in s for s in response.suggested_followups)
 
 
+@pytest.mark.asyncio
+async def test_resolve_returns_sync_failed_on_http_5xx(
+    user_config_dir: Path,
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """A 5xx response from HF means the repo_id is fine but HF is
+    having a bad day — the recourse is to retry, not to fix the
+    repo_id. Status must be `sync_failed`, not `not_found_on_hf`,
+    so the LLM client surfaces the correct retry guidance."""
+    import httpx
+
+    mock = AsyncMock()
+    mock.side_effect = httpx.HTTPStatusError(
+        message="503 Service Unavailable",
+        request=httpx.Request("GET", "https://huggingface.co/api/models/x"),
+        response=httpx.Response(503),
+    )
+    monkeypatch.setattr(
+        "whatcanirun.catalog.hf_sync.HfModelSync.sync_model",
+        mock,
+    )
+    result = await resolve_model_to_user_yaml(
+        model_slug="any-slug",
+        hf_repo_id="vendor/any",
+        config_dir=user_config_dir,
+        cache_dir=tmp_path / "cache",
+    )
+    assert result.status == "sync_failed"
+    assert "503" in (result.error_detail or "")
+
+
+@pytest.mark.asyncio
+async def test_resolve_returns_sync_failed_on_network_error(
+    user_config_dir: Path,
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """A network-layer failure (DNS, refused connection, TLS, etc.)
+    means HF is unreachable from this machine. Status must be
+    `sync_failed` so the LLM client offers a retry rather than
+    accusing the user's repo_id."""
+    import httpx
+
+    mock = AsyncMock()
+    mock.side_effect = httpx.ConnectError("connection refused")
+    monkeypatch.setattr(
+        "whatcanirun.catalog.hf_sync.HfModelSync.sync_model",
+        mock,
+    )
+    result = await resolve_model_to_user_yaml(
+        model_slug="any-slug",
+        hf_repo_id="vendor/any",
+        config_dir=user_config_dir,
+        cache_dir=tmp_path / "cache",
+    )
+    assert result.status == "sync_failed"
+
+
 def test_resolve_model_registered_as_mcp_tool() -> None:
     """Registration smoke test — the tool surface advertised on
     `initialize` must include `resolve_model`. Without it the

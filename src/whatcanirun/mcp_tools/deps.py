@@ -21,6 +21,7 @@ UnknownModelResponse) when a cache hasn't been warmed yet.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +67,17 @@ class RuntimeDeps:
     quantizations: list[Quantization] = field(default_factory=list)
     workload_profiles: list[WorkloadProfile] = field(default_factory=list)
     bench_cells: list[BenchmarkCell] = field(default_factory=list)
+    # CP `meta.generated_at` timestamps per endpoint — the canonical
+    # freshness anchor for the GPU specs and LLM pricing domains.
+    # `datetime.min` when CP was unreachable; the freshness_confidence
+    # curve maps that to the lowest band so a missing timestamp is
+    # never confused with "just refreshed".
+    gpu_catalog_generated_at: dt.datetime = field(
+        default_factory=lambda: dt.datetime.min.replace(tzinfo=dt.UTC)
+    )
+    llm_prices_generated_at: dt.datetime = field(
+        default_factory=lambda: dt.datetime.min.replace(tzinfo=dt.UTC)
+    )
     tracked_models: list[TrackedModelRow] = field(default_factory=list)
 
 
@@ -88,6 +100,33 @@ def _load_hf_model_cache(cache_dir: Path) -> list[Model]:
             # if this becomes common.
             continue
     return models
+
+
+async def _meta_generated_at(client: ComputePricesClient, endpoint: str) -> dt.datetime | None:
+    """Extract `meta.generated_at` from a CP endpoint's raw payload.
+    Returns None on any failure (CP unreachable, cache cold, meta
+    missing, parse error) — callers fall back to a conservative
+    `datetime.min` anchor so freshness confidence drops to the
+    lowest band rather than silently appearing fresh.
+
+    The broad except is deliberate: this helper exists to enrich
+    the freshness anchor, never to fail the tool call. Whatever
+    breaks here (network, redirect, parse), the caller proceeds
+    with `None` and the freshness curve takes care of the rest."""
+    try:
+        raw = await client.get_raw_response(endpoint)
+    except Exception:
+        return None
+    meta = raw.get("meta") if isinstance(raw, dict) else None
+    if not isinstance(meta, dict):
+        return None
+    raw_ts = meta.get("generated_at")
+    if not isinstance(raw_ts, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _load_merged_tracked_models(
@@ -177,6 +216,14 @@ async def load_runtime_deps(
     gpu_catalog: list[GpuCatalogRow] = await _fetch_or_empty(cp_client.get_gpu_catalog)
     llm_catalog: list[LlmCatalogRow] = await _fetch_or_empty(cp_client.get_llm_catalog)
 
+    # Per-endpoint `meta.generated_at` for the freshness domain.
+    # `get_raw_response` shares the cache so this is free for warm
+    # endpoints; unreachable endpoints stay at datetime.min so the
+    # freshness_confidence curve maps them to the lowest band.
+    epoch = dt.datetime.min.replace(tzinfo=dt.UTC)
+    gpu_catalog_ts = await _meta_generated_at(cp_client, "gpus") or epoch
+    llm_prices_ts = await _meta_generated_at(cp_client, "llm-prices") or epoch
+
     model_catalog = _load_hf_model_cache(cache_dir)
     tracked_models = _load_merged_tracked_models(seeds_dir=seeds_dir, config_dir=config_dir)
 
@@ -185,6 +232,8 @@ async def load_runtime_deps(
         llm_prices=llm_prices,
         gpu_catalog=gpu_catalog,
         llm_catalog=llm_catalog,
+        gpu_catalog_generated_at=gpu_catalog_ts,
+        llm_prices_generated_at=llm_prices_ts,
         model_catalog=model_catalog,
         quantizations=quantizations,
         workload_profiles=workload_profiles,
