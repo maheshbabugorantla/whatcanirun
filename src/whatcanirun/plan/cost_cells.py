@@ -416,6 +416,7 @@ def _partial_envelope_for_gpu_rental(
             quant_slug,
             batch_size,
             context_length,
+            "own_measured",
             price.last_updated,
         )
         sources.append(
@@ -435,6 +436,7 @@ def _partial_envelope_for_gpu_rental(
             quant_slug,
             batch_size,
             context_length,
+            "public_benchmark_anchor",
             price.last_updated,
         )
         sources.append(
@@ -542,13 +544,22 @@ def _anchor_last_updated(
     quant_slug: str,
     batch_size: int,
     context_length: int,
+    tier_source: str,
     fallback: datetime,
 ) -> datetime:
     """Tier 1a/1b helper: return the matched BenchmarkCell's
     measured_at as a UTC datetime, or `fallback` (typically the
     price's last_updated) when no cell matches. Lookup is deferred
     into this helper so callers in non-anchor tiers (Tier 2/3/4)
-    avoid the O(len(bench_cells)) scan they don't need."""
+    avoid the O(len(bench_cells)) scan they don't need.
+
+    `tier_source` mirrors the BenchmarkCell.source value
+    `estimate_tps` matched on (`own_measured` for Tier 1a,
+    `public_benchmark_anchor` for Tier 1b). v2 will see both
+    kinds of cells for the same op-point; filtering on tier
+    source here keeps Source.last_updated aligned with the
+    cell estimate_tps actually selected, rather than whichever
+    appears first in bench_cells."""
     cell = _find_matched_bench_cell(
         bench_cells=bench_cells,
         gpu_slug=gpu_slug,
@@ -556,6 +567,7 @@ def _anchor_last_updated(
         quant_slug=quant_slug,
         batch_size=batch_size,
         context_length=context_length,
+        tier_source=tier_source,
     )
     if cell is None:
         return fallback
@@ -570,16 +582,22 @@ def _find_matched_bench_cell(
     quant_slug: str,
     batch_size: int,
     context_length: int,
+    tier_source: str,
 ) -> BenchmarkCell | None:
     """Find the BenchmarkCell row that M07's estimate_tps would
-    have matched for this op-point — used by the envelope helper
-    so Source.last_updated reflects the BENCHMARK's measured_at
-    rather than the GPU price's freshness. Mirrors the matching
-    rule in `whatcanirun.inference.tps_estimator._cell_matches`
-    (tp_size=1 single-GPU)."""
+    have matched for this op-point and tier — used by the
+    envelope helper so Source.last_updated reflects the BENCHMARK's
+    measured_at rather than the GPU price's freshness. Mirrors
+    the matching rule in
+    `whatcanirun.inference.tps_estimator._cell_matches` (tp_size=1
+    single-GPU) PLUS the per-tier source filter (estimate_tps
+    scans for own_measured first, then public_benchmark_anchor —
+    this helper has to match the SAME tier the estimator picked,
+    otherwise v2's mixed-tier bench_cells confuses provenance)."""
     for cell in bench_cells:
         if (
-            cell.gpu_slug == gpu_slug
+            cell.source == tier_source
+            and cell.gpu_slug == gpu_slug
             and cell.model_slug == model_slug
             and cell.quant_slug == quant_slug
             and cell.tp_size == 1

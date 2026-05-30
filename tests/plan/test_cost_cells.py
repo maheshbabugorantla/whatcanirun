@@ -967,3 +967,94 @@ def test_render_resource_preserves_typed_columns_when_hosted_only() -> None:
     assert schema.field("pricing_type").type == pa.string()
     assert schema.field("decode_tps").type == pa.float64()
     assert schema.field("fits").type == pa.bool_()
+
+
+def test_anchor_last_updated_filters_on_tier_source() -> None:
+    """Copilot review (round 7): when both an `own_measured` cell
+    and a `public_benchmark_anchor` cell exist for the same
+    op-point (a v2 scenario once M17 ships GuideLLM-measured
+    rows), `_anchor_last_updated` must match the tier that
+    `estimate_tps` actually picked — otherwise `Source.last_updated`
+    reflects the wrong benchmark's freshness.
+
+    v1's `BenchmarkCell` validator rejects `source='own_measured'`
+    at construction, so the test uses `model_construct` to
+    simulate the v2 row without triggering the guard."""
+    from whatcanirun.plan.cost_cells import _anchor_last_updated
+
+    public_anchor = _anchor()  # source=public_benchmark_anchor, measured_at=2026-03-15
+    own_anchor = BenchmarkCell.model_construct(
+        gpu_slug="h100",
+        model_slug="llama-3-3-70b",
+        quant_slug="fp8",
+        tp_size=1,
+        batch_size=1,
+        context_length=4096,
+        decode_tps=42.0,
+        prefill_tps=None,
+        ttft_ms=None,
+        engine="vllm",
+        engine_version="0.6.x",
+        measured_at=date(2026, 1, 10),
+        source="own_measured",
+        source_url="https://example.com/own",
+        notes="v2 forward-compat fixture (bypasses v1 validator).",
+    )
+    fallback = datetime(2026, 5, 28, tzinfo=dt.UTC)
+
+    # The estimator picked Tier 1a — helper must return the
+    # own_measured cell's measured_at, not the public anchor's.
+    own_ts = _anchor_last_updated(
+        [own_anchor, public_anchor],
+        "h100",
+        "llama-3-3-70b",
+        "fp8",
+        1,
+        4096,
+        "own_measured",
+        fallback,
+    )
+    assert own_ts.date() == date(2026, 1, 10), (
+        "_anchor_last_updated returned the wrong cell — the helper "
+        "should filter on tier source, not return whichever cell "
+        "appears first in bench_cells"
+    )
+
+    # The estimator picked Tier 1b — helper must return the
+    # public_benchmark_anchor cell's measured_at.
+    public_ts = _anchor_last_updated(
+        [own_anchor, public_anchor],
+        "h100",
+        "llama-3-3-70b",
+        "fp8",
+        1,
+        4096,
+        "public_benchmark_anchor",
+        fallback,
+    )
+    assert public_ts.date() == date(2026, 3, 15)
+
+
+def test_anchor_last_updated_falls_back_when_no_matching_tier_cell() -> None:
+    """Companion to the above: when bench_cells has cells at the
+    op-point but none with the matching tier source, the helper
+    falls back to `fallback` rather than misattributing
+    cross-tier."""
+    from whatcanirun.plan.cost_cells import _anchor_last_updated
+
+    public_anchor = _anchor()
+    fallback = datetime(2026, 5, 28, tzinfo=dt.UTC)
+    # No own_measured cells in bench_cells — Tier 1a lookup should
+    # fall back, not return the public_benchmark_anchor's
+    # measured_at.
+    ts = _anchor_last_updated(
+        [public_anchor],
+        "h100",
+        "llama-3-3-70b",
+        "fp8",
+        1,
+        4096,
+        "own_measured",
+        fallback,
+    )
+    assert ts == fallback
