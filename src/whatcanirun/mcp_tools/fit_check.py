@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from whatcanirun.catalog.hf_model import Model
 from whatcanirun.catalog.seed_schemas import Quantization
 from whatcanirun.inference.fit_check import FitResult, compute_fit
+from whatcanirun.mcp_tools.dispatch import UnknownModelResponse
 from whatcanirun.pricing.projections import GpuCatalogRow
 from whatcanirun.trust.builders import build_fit_check_envelope
 from whatcanirun.trust.envelope import TrustEnvelope
@@ -94,22 +95,53 @@ async def fit_check(
     tp_size: int = 1,
     batch_size: int = 1,
     context_length: int = 4096,
-) -> FitCheckToolResponse:
+) -> FitCheckToolResponse | UnknownModelResponse:
     """`fit_check` MCP tool entry point.
 
     Resolves the three slugs against the local catalog caches,
-    runs the pure builder, returns the response. The slug-
-    resolution path is a placeholder for Slice L's unknown-model
-    dispatcher — Case 2 (CP-only) and Case 3 (genuinely unknown)
-    will swap this for an `UnknownModelResponse` branch.
+    runs the pure builder, returns the response.
 
-    For now the tool raises `LookupError` on missing-slug paths;
-    the FastMCP layer surfaces that as an MCP error which the
-    LLM client relays. The tool wrapper is intentionally thin —
-    Slice L is where the real dispatch logic lands.
+    Per spec/M09 § Case 2: fit_check collapses Case 2 to Case 3
+    — fit-checking fundamentally requires architecture data, so
+    a CP-only model (hosted-API pricing but no HF config) cannot
+    produce a defensible FitResult. Return UnknownModelResponse
+    so the client can elicit the HF repo_id.
     """
-    raise NotImplementedError(
-        "fit_check tool slug-resolution is wired in Slice L "
-        "(unknown-model dispatcher). The pure builder "
-        "`build_fit_check_response` is testable independently."
+    from datetime import UTC, datetime
+
+    from whatcanirun.mcp_tools.deps import load_runtime_deps
+    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+
+    deps = await load_runtime_deps()
+    model = find_model_in_catalog(model_slug, deps)
+    if model is None:
+        # Case 2 (CP-only) and Case 3 both collapse here for fit_check.
+        return UnknownModelResponse(requested_model_slug=model_slug)
+
+    gpu = next((g for g in deps.gpu_catalog if g.slug == gpu_slug), None)
+    if gpu is None:
+        raise LookupError(
+            f"gpu_slug {gpu_slug!r} not in cached gpu catalog. "
+            "Call list_catalog to see supported GPUs."
+        )
+
+    quant = next((q for q in deps.quantizations if q.slug == quant_slug), None)
+    if quant is None:
+        raise LookupError(
+            f"quant_slug {quant_slug!r} not in seed quantizations. "
+            "Call list_catalog to see supported quantizations."
+        )
+
+    return build_fit_check_response(
+        model=model,
+        gpu=gpu,
+        quant=quant,
+        tp_size=tp_size,
+        batch_size=batch_size,
+        context_length=context_length,
+        now=datetime.now(UTC),
+        # Without the CP meta.generated_at timestamp threaded through,
+        # use the freshest gpu_catalog row's last_updated as a
+        # conservative anchor. M11 may plumb generated_at through.
+        gpu_specs_last_updated=datetime.now(UTC),
     )

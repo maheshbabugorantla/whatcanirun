@@ -23,6 +23,7 @@ import math
 from pydantic import BaseModel, ConfigDict
 
 from whatcanirun.catalog.workload import WorkloadProfile
+from whatcanirun.mcp_tools.dispatch import UnknownModelResponse, WorkloadElicitationResponse
 from whatcanirun.plan.cost_cells import CostCell
 from whatcanirun.trust.envelope import ConfidenceDomain, TrustEnvelope
 
@@ -179,16 +180,51 @@ async def budget_to_plan(
     workload_profile_slug: str | None = None,
     quant_slug: str | None = None,
     top_n: int = 3,
-) -> list[BudgetPlanRow]:
+) -> list[BudgetPlanRow] | UnknownModelResponse | WorkloadElicitationResponse:
     """`budget_to_plan` MCP tool entry point — the headline.
 
-    Slug-resolution + cost-cells query + workload-elicitation
-    routing live in Slice L + Slice M respectively. The pure
-    builder `build_budget_plan` is testable today; end-to-end
-    wiring lands when those slices ship.
+    Three response shapes:
+      - `list[BudgetPlanRow]` — happy path (model known + workload supplied)
+      - `WorkloadElicitationResponse` — Slice M: workload_profile_slug
+        omitted, server elicits rather than silently defaulting
+      - `UnknownModelResponse` — Case 3: model not in tracked-models
+        catalog (Case 2 partial-cell support is M11 follow-up)
     """
-    raise NotImplementedError(
-        "budget_to_plan slug-resolution + cost-cells query is wired "
-        "in Slice L; the workload-elicitation routing is Slice M. "
-        "The pure builder `build_budget_plan` is testable today."
+    from whatcanirun.mcp_tools.deps import load_runtime_deps
+    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+    from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
+
+    # Slice M: workload elicitation. Silent default would set
+    # workload_assumption=0.2 and drag confidence to 0.2 anyway,
+    # so eliciting up-front is the cleaner API expression.
+    if workload_profile_slug is None:
+        return WorkloadElicitationResponse(requested_model_slug=model_slug)
+
+    deps = await load_runtime_deps()
+    if find_model_in_catalog(model_slug, deps) is None:
+        return UnknownModelResponse(requested_model_slug=model_slug)
+
+    workload = next(
+        (w for w in deps.workload_profiles if w.slug == workload_profile_slug),
+        None,
     )
+    if workload is None:
+        raise LookupError(
+            f"workload_profile_slug {workload_profile_slug!r} not found. "
+            "Call list_catalog to see supported workload profiles."
+        )
+
+    cells = query_cost_cells(
+        gpu_prices=deps.gpu_prices,
+        llm_prices=deps.llm_prices,
+        gpu_catalog=deps.gpu_catalog,
+        model_catalog=deps.model_catalog,
+        quantizations=deps.quantizations,
+        bench_cells=deps.bench_cells,
+        aa_observations=None,
+        filters=CostCellFilters(
+            model_slug=model_slug,
+            quant_slug=quant_slug,
+        ),
+    )
+    return build_budget_plan(budget_usd=budget_usd, cells=cells, workload=workload, top_n=top_n)

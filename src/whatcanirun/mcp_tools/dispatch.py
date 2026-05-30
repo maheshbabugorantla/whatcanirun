@@ -174,3 +174,79 @@ async def resolve_model(
     default XDG paths. The split lets tests inject temp dirs
     without monkeypatching module-level state."""
     return await resolve_model_to_user_yaml(model_slug, hf_repo_id)
+
+
+# ============================================================ Case dispatcher
+# Routes model_slug through Case 1 / Case 2 / Case 3 per spec/M09
+# § Unknown model handling.
+
+
+def find_model_in_catalog(model_slug: str, deps: RuntimeDeps) -> Model | None:
+    """Case 1 lookup: is the model in the cached HF catalog?
+    Returns the Model on match, None otherwise."""
+    for model in deps.model_catalog:
+        if model.slug == model_slug:
+            return model
+    return None
+
+
+def find_in_cp_llm_catalog(model_slug: str, deps: RuntimeDeps) -> LlmCatalogRow | None:
+    """Case 2 lookup: is the model in CP's hosted-API catalog
+    (`/api/v1/llm-models`) even though we don't have HF
+    architecture data for it? Returns the row on match, None
+    otherwise."""
+    for row in deps.llm_catalog:
+        if row.slug == model_slug:
+            return row
+    return None
+
+
+# Imports moved here to avoid circular imports; the type-only
+# references above are forward-strings until this point.
+from whatcanirun.catalog.hf_model import Model  # noqa: E402
+from whatcanirun.mcp_tools.deps import RuntimeDeps  # noqa: E402
+from whatcanirun.pricing.projections import LlmCatalogRow  # noqa: E402
+
+# ============================================================ Workload elicit
+# Slice M: when `budget_to_plan` is called without
+# `workload_profile_slug`, the spec rejects silent defaults and
+# instead elicits the profile via WorkloadElicitationResponse.
+
+
+_WORKLOAD_ELICIT_PROMPT = (
+    "To estimate prompt counts for your budget, I need to know what kind "
+    "of workload these prompts represent. Pick one:\n"
+    "- code_completion: short prompts (~100 in, ~50 out)\n"
+    "- chat_assistant: medium prompts (~500 in, ~200 out)\n"
+    "- batch_eval:     long prompts (~2000 in, ~100 out)\n"
+    "If none of those fit, ask me for `find_cheapest_deployment` instead - "
+    "it returns $/M figures so you can do the math against your own "
+    "token distribution."
+)
+
+
+class WorkloadElicitationResponse(BaseModel):
+    """Returned by `budget_to_plan` when `workload_profile_slug`
+    is omitted. Per spec/M09 § Workload assumption handling, the
+    server elicits the profile rather than silently defaulting -
+    a default would set `workload_assumption=0.2` and drag the
+    top-level confidence to 0.2 anyway, so eliciting up-front
+    is the same answer expressed in the API surface.
+
+    No trust_envelope (elicitation, no numbers to wrap)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_model_slug: str
+    status: Literal["workload_required"] = "workload_required"
+    elicit_field: Literal["workload_profile_slug"] = "workload_profile_slug"
+    elicit_prompt: str = _WORKLOAD_ELICIT_PROMPT
+    available_profiles: list[str] = Field(
+        default_factory=lambda: ["code_completion", "chat_assistant", "batch_eval"]
+    )
+    suggested_followups: list[str] = Field(
+        default_factory=lambda: [
+            "budget_to_plan with workload_profile_slug='chat_assistant' for a starting estimate",
+            "find_cheapest_deployment (returns $/M figures, no prompt-count synthesis)",
+        ]
+    )

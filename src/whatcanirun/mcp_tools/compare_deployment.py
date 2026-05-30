@@ -20,6 +20,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from whatcanirun.catalog.workload import WorkloadProfile
+from whatcanirun.mcp_tools.dispatch import UnknownModelResponse
 from whatcanirun.plan.cost_cells import CostCell
 from whatcanirun.trust.envelope import (
     ConfidenceDomain,
@@ -194,14 +195,60 @@ async def compare_deployment_modes(
     batch_size: int,
     context_length: int,
     workload_profile_slug: str,
-) -> DeploymentComparison:
+) -> DeploymentComparison | UnknownModelResponse:
     """`compare_deployment_modes` MCP tool entry point.
 
-    Slug-resolution + cost-cells query is Slice L's job. The
-    pure builder `build_deployment_comparison` is testable today;
-    end-to-end wiring lands with the unknown-model dispatcher.
+    Per spec/M09 § Case 2 + Tool-by-tool Case 2 behavior:
+    compare_deployment_modes collapses Case 2 to Case 3 — its
+    whole purpose is to compare cloud_gpu_rental vs
+    hosted_api_token, and without architecture data the cloud
+    side is impossible. A DeploymentComparison with
+    cloud_gpu_rental=None would obscure the failure mode; better
+    to return UnknownModelResponse and let the client elicit.
     """
-    raise NotImplementedError(
-        "compare_deployment_modes slug-resolution + cost-cells query "
-        "is wired in Slice L (unknown-model dispatcher)."
+    from datetime import UTC, datetime
+
+    from whatcanirun.mcp_tools.deps import load_runtime_deps
+    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+    from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
+
+    deps = await load_runtime_deps()
+    if find_model_in_catalog(model_slug, deps) is None:
+        return UnknownModelResponse(requested_model_slug=model_slug)
+
+    workload = next(
+        (w for w in deps.workload_profiles if w.slug == workload_profile_slug),
+        None,
+    )
+    if workload is None:
+        raise LookupError(
+            f"workload_profile_slug {workload_profile_slug!r} not found. "
+            "Call list_catalog to see supported workload profiles."
+        )
+
+    cells = query_cost_cells(
+        gpu_prices=deps.gpu_prices,
+        llm_prices=deps.llm_prices,
+        gpu_catalog=deps.gpu_catalog,
+        model_catalog=deps.model_catalog,
+        quantizations=deps.quantizations,
+        bench_cells=deps.bench_cells,
+        aa_observations=None,
+        filters=CostCellFilters(
+            model_slug=model_slug,
+            gpu_slug=gpu_slug,
+            quant_slug=quant_slug,
+            batch_size=batch_size,
+            context_length=context_length,
+        ),
+    )
+
+    cloud_cell = next((c for c in cells if c.deployment_mode == "cloud_gpu_rental"), None)
+    hosted_cell = next((c for c in cells if c.deployment_mode == "hosted_api_token"), None)
+
+    return build_deployment_comparison(
+        cloud_cell=cloud_cell,
+        hosted_cell=hosted_cell,
+        workload=workload,
+        now=datetime.now(UTC),
     )

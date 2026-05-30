@@ -18,6 +18,7 @@ each row's trust envelope IS the per-row provenance.
 
 from __future__ import annotations
 
+from whatcanirun.mcp_tools.dispatch import UnknownModelResponse
 from whatcanirun.plan.cost_cells import CostCell
 
 
@@ -76,24 +77,41 @@ async def find_cheapest_deployment(
     context_length: int = 4096,
     region: str | None = None,
     top_n: int = 10,
-) -> list[CostCell]:
+) -> list[CostCell] | UnknownModelResponse:
     """`find_cheapest_deployment` MCP tool entry point.
-
-    Resolves the model + quant slugs against the local catalog
-    caches, queries M08's cost-cells layer with the supplied
-    op-point + region filter, then ranks via
-    `find_cheapest_deployments`.
-
-    The slug-resolution + cost-cells query is Slice L's job
-    (unknown-model dispatcher + full cache plumbing). This stub
-    keeps the registration discoverable while signaling the gap.
 
     `region` is accepted for forward-compatibility but is a no-op
     in v1 — CP doesn't expose region per gpu-price row in a
-    structured way. v2 plumbing TBD.
+    structured way.
+
+    Per spec/M09 § Case 2: find_cheapest_deployment supports the
+    partial-CostCell path for hosted_api_token rows when the model
+    is in CP's catalog but not in our tracked-models set. The full
+    Case 2 partial-cell construction is M11/follow-up work; for
+    now Case 2 collapses to Case 3 (UnknownModelResponse).
     """
-    raise NotImplementedError(
-        "find_cheapest_deployment slug-resolution + cost-cells query "
-        "is wired in Slice L. The pure ranker `find_cheapest_deployments` "
-        "is testable independently."
+    _ = region  # accepted for v2 forward-compat; v1 no-op
+    from whatcanirun.mcp_tools.deps import load_runtime_deps
+    from whatcanirun.mcp_tools.dispatch import find_model_in_catalog
+    from whatcanirun.plan.cost_cells import CostCellFilters, query_cost_cells
+
+    deps = await load_runtime_deps()
+    if find_model_in_catalog(model_slug, deps) is None:
+        return UnknownModelResponse(requested_model_slug=model_slug)
+
+    cells = query_cost_cells(
+        gpu_prices=deps.gpu_prices,
+        llm_prices=deps.llm_prices,
+        gpu_catalog=deps.gpu_catalog,
+        model_catalog=deps.model_catalog,
+        quantizations=deps.quantizations,
+        bench_cells=deps.bench_cells,
+        aa_observations=None,
+        filters=CostCellFilters(
+            model_slug=model_slug,
+            quant_slug=quant_slug,
+            batch_size=batch_size,
+            context_length=context_length,
+        ),
     )
+    return find_cheapest_deployments(cells, top_n=top_n)
