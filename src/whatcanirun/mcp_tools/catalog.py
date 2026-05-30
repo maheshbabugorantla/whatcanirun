@@ -129,8 +129,8 @@ def build_catalog_snapshot(
     When `config_dir` is supplied, models added via `resolve_model`
     to `<config_dir>/user_models.yaml` are merged into the returned
     `models` list (seeds win on slug collisions, per the merged-
-    loader contract `_load_merged_tracked_models` already enforces
-    in `deps.py`). When `config_dir=None`, only seed rows are
+    loader contract `load_merged_tracked_models` enforces in
+    `deps.py`). When `config_dir=None`, only seed rows are
     surfaced — used by tests that don't need the merge.
 
     The provider dedup keeps insertion order so a client UI sees
