@@ -31,7 +31,9 @@ from whatcanirun import __version__
 INSTRUCTIONS = """\
 This server returns inference cost/fit/throughput plans for LLM workloads.
 
-Every numerical tool output includes a `trust_envelope` carrying:
+Every numerical tool output carries a `trust_envelope`. For tools that return a single result Pydantic (e.g. `fit_check`, `compare_deployment_modes`), the envelope is a top-level `trust_envelope` field on the response. For tools that return lists (e.g. `find_cheapest_deployment` returns `list[CostCell]`; `budget_to_plan` returns `list[BudgetPlanRow]`), the envelope is nested PER ITEM — each list element has its own `trust_envelope` field; there is no top-level envelope for the list as a whole. When relaying a list result, walk every row's envelope, not just the first.
+
+Envelope contents:
 - sources (each upstream that contributed a number)
 - confidence_breakdown (per-domain: pricing, fit_check, throughput, model_architecture, gpu_specs, workload_assumption, freshness — `workload_assumption` appears only on responses that synthesize derived counts from a workload profile, e.g. `BudgetPlanRow.est_total_prompts`; it is omitted entirely when no workload was assumed)
 - assumptions (what was held fixed)
