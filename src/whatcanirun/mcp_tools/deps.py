@@ -95,10 +95,21 @@ def _load_hf_model_cache(cache_dir: Path) -> list[Model]:
         try:
             data = json.loads(path.read_text())
             models.append(Model.model_validate(data))
-        except (json.JSONDecodeError, ValueError):
+        except (
+            json.JSONDecodeError,
+            ValueError,
+            OSError,
+            UnicodeDecodeError,
+        ):
             # A corrupted cache file shouldn't take out the whole
-            # tool — skip and move on. M11 can add a stderr warning
-            # if this becomes common.
+            # tool — skip and move on. The four classes cover the
+            # full failure surface: JSON parse (corrupt JSON),
+            # ValueError + Pydantic ValidationError (schema drift —
+            # ValidationError IS a ValueError subclass), OSError
+            # (read error, permission denied, partially-written
+            # cache), and UnicodeDecodeError (binary garbage in a
+            # .json file). M11 can add a stderr warning if this
+            # becomes common.
             continue
     return models
 
