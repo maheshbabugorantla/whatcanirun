@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -136,6 +137,45 @@ def test_providers_derived_from_gpu_prices_distinct(
     # has many), and far fewer than the raw row count (which means
     # dedup actually ran).
     assert 2 <= len(slugs) < len(gpu_prices)
+
+
+def test_build_catalog_snapshot_merges_user_models_yaml(
+    gpu_prices: list[GpuPriceRow],
+    tmp_path: Any,
+) -> None:
+    """Copilot review #15 round 3 #5: after a successful
+    resolve_model, the user-added slug is persisted to
+    `~/.config/whatcanirun/user_models.yaml`. list_catalog must
+    surface it — otherwise the catalog says 'supported models'
+    but lies after every resolve_model success.
+
+    When config_dir is passed, build_catalog_snapshot must union
+    user_models.yaml rows with the seed rows. Seeds win on
+    collision (the merged-loader contract from deps.py)."""
+    import yaml as _yaml
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "user_models.yaml").write_text(
+        _yaml.safe_dump([{"slug": "user-resolved-llama", "hf_repo_id": "vendor/User-Llama"}])
+    )
+
+    # Without config_dir → seeds only, user model absent.
+    seeds_only = build_catalog_snapshot(seeds_dir=SEEDS_DIR, gpu_prices=gpu_prices)
+    assert all(m.slug != "user-resolved-llama" for m in seeds_only.models)
+
+    # With config_dir → user model is merged in.
+    merged = build_catalog_snapshot(
+        seeds_dir=SEEDS_DIR, gpu_prices=gpu_prices, config_dir=config_dir
+    )
+    slugs = {m.slug for m in merged.models}
+    assert "user-resolved-llama" in slugs, (
+        "user-resolved model missing from list_catalog after a stubbed "
+        "resolve_model would have persisted it — clients would think the "
+        "model isn't supported even though dispatcher accepts it"
+    )
+    # And seed rows still survive — the merge is union, not replace.
+    assert len(merged.models) > len(seeds_only.models)
 
 
 def test_list_catalog_registered_as_mcp_tool() -> None:

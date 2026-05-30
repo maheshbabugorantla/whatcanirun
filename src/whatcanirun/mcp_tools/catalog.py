@@ -29,7 +29,7 @@ from whatcanirun.catalog.loaders import (
     load_tracked_models,
     load_workload_profiles,
 )
-from whatcanirun.paths import SEEDS_DIR, USER_CACHE_DIR
+from whatcanirun.paths import SEEDS_DIR, USER_CACHE_DIR, USER_CONFIG_DIR
 from whatcanirun.pricing.computeprices import (
     ComputePricesClient,
     ComputePricesUnavailable,
@@ -119,18 +119,32 @@ def build_catalog_snapshot(
     *,
     seeds_dir: Path,
     gpu_prices: list[GpuPriceRow],
+    config_dir: Path | None = None,
 ) -> CatalogSnapshot:
     """Pure constructor: seed YAML reads + dedup of providers from
     CP gpu_prices. The caller is responsible for fetching the
     gpu_prices rows (via `ComputePricesClient.get_gpu_prices()` in
     the tool wrapper, via a fixture in tests).
 
+    When `config_dir` is supplied, models added via `resolve_model`
+    to `<config_dir>/user_models.yaml` are merged into the returned
+    `models` list (seeds win on slug collisions, per the merged-
+    loader contract `_load_merged_tracked_models` already enforces
+    in `deps.py`). When `config_dir=None`, only seed rows are
+    surfaced — used by tests that don't need the merge.
+
     The provider dedup keeps insertion order so a client UI sees
     a stable list across calls — `dict[str, str]` is insertion-
     ordered since 3.7."""
+    from whatcanirun.mcp_tools.deps import load_merged_tracked_models
+
     gpu_supplements = load_gpu_supplements(seeds_dir / "gpus_supplement.yaml")
     quantizations = load_quantizations(seeds_dir / "quantizations.yaml")
-    tracked_models = load_tracked_models(seeds_dir / "tracked_models.yaml")
+    tracked_models = (
+        load_merged_tracked_models(seeds_dir=seeds_dir, config_dir=config_dir)
+        if config_dir is not None
+        else load_tracked_models(seeds_dir / "tracked_models.yaml")
+    )
     workload_profiles = load_workload_profiles(seeds_dir / "workload_profiles.yaml")
 
     # Distinct providers by slug, first occurrence wins for the
@@ -192,4 +206,13 @@ async def list_catalog() -> CatalogSnapshot:
         gpu_prices = await client.get_gpu_prices()
     except ComputePricesUnavailable:
         gpu_prices = []
-    return build_catalog_snapshot(seeds_dir=SEEDS_DIR, gpu_prices=gpu_prices)
+    # Pass USER_CONFIG_DIR so user-resolved models (persisted to
+    # user_models.yaml by `resolve_model`) appear in the catalog
+    # UI — without this, list_catalog says "supported models" but
+    # only shows seeds, which is misleading after a successful
+    # resolve_model call. spec/M09 § Public surface §1 says
+    # list_catalog is the dropdown helper — it must reflect what
+    # the dispatcher will accept.
+    return build_catalog_snapshot(
+        seeds_dir=SEEDS_DIR, gpu_prices=gpu_prices, config_dir=USER_CONFIG_DIR
+    )

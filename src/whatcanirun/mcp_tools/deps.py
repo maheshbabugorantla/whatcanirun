@@ -129,7 +129,7 @@ async def _meta_generated_at(client: ComputePricesClient, endpoint: str) -> dt.d
         return None
 
 
-def _load_merged_tracked_models(
+def load_merged_tracked_models(
     *,
     seeds_dir: Path,
     config_dir: Path,
@@ -225,7 +225,7 @@ async def load_runtime_deps(
     llm_prices_ts = await _meta_generated_at(cp_client, "llm-prices") or epoch
 
     model_catalog = _load_hf_model_cache(cache_dir)
-    tracked_models = _load_merged_tracked_models(seeds_dir=seeds_dir, config_dir=config_dir)
+    tracked_models = load_merged_tracked_models(seeds_dir=seeds_dir, config_dir=config_dir)
 
     return RuntimeDeps(
         gpu_prices=gpu_prices,
