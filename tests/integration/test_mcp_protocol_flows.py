@@ -491,12 +491,30 @@ async def test_user_asks_about_unknown_model_then_supplies_repo_id(
         assert resolved_payload["status"] == "resolved"
         assert resolved_payload["hf_revision_sha"]
 
-        # Turn 3: client retries the original question. Without a
-        # gpu_catalog (cp_offline in server_cold), gpu_slug lookup
-        # raises. The flow still completes the unknown-model loop —
-        # the next gap (gpu_catalog) is a separate failure mode the
-        # LLM client surfaces as a different elicitation.
-        # NB: this asserts the resolve worked end-to-end at minimum.
+        # Verify the persistence side effects per spec/M09 §6 —
+        # resolve_model MUST write user_models.yaml AND the HF
+        # cache file. A future regression where the tool returns
+        # status="resolved" without actually persisting would slip
+        # past a status-only assertion. These two checks pin both
+        # halves of the persistence contract.
+        import yaml as _yaml
+
+        user_yaml = server_cold / "config" / "user_models.yaml"
+        assert user_yaml.exists(), (
+            "resolve_model returned 'resolved' but didn't write user_models.yaml"
+        )
+        rows = _yaml.safe_load(user_yaml.read_text())
+        assert any(
+            r.get("slug") == "my-fine-tuned-llama" and r.get("hf_repo_id") == "vendor/My-FT-Llama"
+            for r in rows
+        ), f"user_models.yaml missing the resolved (slug, hf_repo_id) row; got: {rows}"
+
+        hf_cache_file = server_cold / "cache" / "huggingface" / "my-fine-tuned-llama.model.json"
+        assert hf_cache_file.exists(), (
+            "resolve_model returned 'resolved' but HfModelSync.sync_model didn't "
+            "write the .model.json cache entry — the resolved model wouldn't be "
+            "available to subsequent dispatch_model_request calls"
+        )
 
 
 # ---------- "Show me the cheapest provider for $MODEL"
@@ -730,9 +748,21 @@ async def test_user_invokes_benchmark_on_budget_prompt(
         first = result.messages[0]
         text = getattr(first.content, "text", str(first.content))
         # Tool chain is named in order — the LLM follows the prose.
-        assert text.index("list_catalog") < text.index("fit_check") or "fit_check" in text
+        # The previous form was `A<B or "fit_check" in text`, which
+        # is parsed as `(A<B) or (fit_check in text)` and degenerates
+        # to a no-op once `fit_check` is anywhere in the text. The
+        # corrected form asserts strict order across all three names.
+        assert "list_catalog" in text
         assert "fit_check" in text
         assert "budget_to_plan" in text
+        pos_list = text.index("list_catalog")
+        pos_fit = text.index("fit_check")
+        pos_budget = text.index("budget_to_plan")
+        assert pos_list < pos_fit < pos_budget, (
+            f"prompt must mention list_catalog → fit_check → "
+            f"budget_to_plan in order; got positions "
+            f"{pos_list}, {pos_fit}, {pos_budget}"
+        )
         # The supplied budget is woven in so the LLM can substitute.
         assert "20" in text
 
