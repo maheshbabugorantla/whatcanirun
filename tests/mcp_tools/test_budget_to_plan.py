@@ -312,6 +312,36 @@ def test_zero_budget_returns_no_rows() -> None:
     assert rows == []
 
 
+def test_negative_top_n_raises_value_error() -> None:
+    """Copilot review #15 round 4: `find_cheapest_deployments`
+    raises on negative top_n; `build_budget_plan` was silently
+    treating it as 'return []'. That inconsistency made it easy
+    for client input bugs (sign error, off-by-one) to silently
+    hide an empty plan. The function now matches the cheapest
+    ranker: top_n=0 is a valid no-op poke; top_n<0 fails fast."""
+    with pytest.raises(ValueError, match="top_n"):
+        build_budget_plan(
+            budget_usd=20.0,
+            cells=[_gpu_cell()],
+            workload=_chat_assistant(),
+            top_n=-3,
+        )
+
+
+def test_zero_top_n_returns_empty_list() -> None:
+    """`top_n=0` is a valid no-op pagination request — some
+    clients use 0 as a 'just tell me whether anything exists' poke.
+    Must NOT raise (that's the negative-top_n behavior); must
+    return an empty list."""
+    rows = build_budget_plan(
+        budget_usd=20.0,
+        cells=[_gpu_cell()],
+        workload=_chat_assistant(),
+        top_n=0,
+    )
+    assert rows == []
+
+
 def test_negative_budget_raises_value_error() -> None:
     """A negative budget is nonsensical and would produce
     negative prompt counts. Fail fast at the function boundary."""

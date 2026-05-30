@@ -144,7 +144,14 @@ def build_budget_plan(
     """
     if budget_usd < 0:
         raise ValueError(f"budget_usd must be non-negative; got {budget_usd}")
-    if budget_usd == 0 or top_n <= 0:
+    if top_n < 0:
+        # Symmetric with `find_cheapest_deployments`: a negative
+        # top_n is almost certainly a client input bug, and
+        # silently turning it into an empty result would hide that
+        # bug instead of surfacing it. top_n == 0 stays valid as
+        # a "tell me whether anything exists" no-op poke.
+        raise ValueError(f"top_n must be >= 0; got {top_n}")
+    if budget_usd == 0 or top_n == 0:
         return []
 
     rows = [_build_row(cell=cell, budget_usd=budget_usd, workload=workload) for cell in cells]
