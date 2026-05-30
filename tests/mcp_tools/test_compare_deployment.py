@@ -268,6 +268,50 @@ def test_both_cells_preserved_with_their_own_envelopes() -> None:
     assert isinstance(out.hosted_api_token.trust_envelope, TrustEnvelope)
 
 
+def test_envelope_merges_verify_links_from_both_sides() -> None:
+    """Spec/SHARED.md: every numerical-output envelope must expose
+    `verify_links` so the LLM client can render a 'verify this'
+    hint. The wrapping envelope must propagate the audit URLs
+    from BOTH component cells — a regression that drops them
+    leaves the client without an audit path for the per-prompt
+    verdict it surfaces."""
+
+    def _envelope_with_links(links: list[str]) -> TrustEnvelope:
+        return TrustEnvelope(
+            sources=[
+                Source(
+                    name="computeprices",
+                    detail="test",
+                    last_updated=dt.datetime(2026, 5, 28, tzinfo=dt.UTC),
+                )
+            ],
+            confidence_breakdown={"pricing": 0.95, "freshness": 0.95},
+            verify_links=links,
+        )
+
+    cloud = _cloud_cell()
+    cloud_envelope_link = "https://cloud-side.example.com/audit"
+    cloud_with_link = cloud.model_copy(
+        update={"trust_envelope": _envelope_with_links([cloud_envelope_link])}
+    )
+    hosted = _hosted_cell()
+    hosted_envelope_link = "https://hosted-side.example.com/audit"
+    hosted_with_link = hosted.model_copy(
+        update={"trust_envelope": _envelope_with_links([hosted_envelope_link])}
+    )
+
+    out = build_deployment_comparison(
+        cloud_cell=cloud_with_link,
+        hosted_cell=hosted_with_link,
+        workload=_chat_assistant(),
+        now=_now(),
+    )
+
+    links = set(out.trust_envelope.verify_links)
+    assert cloud_envelope_link in links, "cloud-side verify_link dropped"
+    assert hosted_envelope_link in links, "hosted-side verify_link dropped"
+
+
 def test_compare_deployment_modes_registered_as_mcp_tool(_: Any = None) -> None:
     """Registration smoke test."""
     import asyncio

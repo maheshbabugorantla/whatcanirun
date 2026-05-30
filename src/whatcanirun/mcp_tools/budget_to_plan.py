@@ -25,7 +25,8 @@ from pydantic import BaseModel, ConfigDict
 from whatcanirun.catalog.workload import WorkloadProfile
 from whatcanirun.mcp_tools.dispatch import UnknownModelResponse, WorkloadElicitationResponse
 from whatcanirun.plan.cost_cells import CostCell
-from whatcanirun.trust.envelope import ConfidenceDomain, TrustEnvelope
+from whatcanirun.trust.builders import build_budget_plan_envelope
+from whatcanirun.trust.envelope import TrustEnvelope
 
 
 class BudgetPlanRow(BaseModel):
@@ -103,35 +104,13 @@ def _build_row(
     else:
         est_wallclock_minutes = est_total_output_tokens / cell.decode_tps / 60.0
 
-    # Build the row's envelope by carrying forward the cell's
-    # confidence breakdown and adding `workload_assumption` per
-    # spec/SHARED.md. The 0.95 value is the calibrated score for
-    # a tool-arg-supplied workload profile (user-supplied custom
-    # tokens would be 1.0; silent default would be 0.2 which M09
-    # avoids by eliciting in Slice M).
-    breakdown: dict[ConfidenceDomain, float] = dict(cell.trust_envelope.confidence_breakdown)
-    breakdown["workload_assumption"] = 0.95
-
-    envelope = TrustEnvelope(
-        sources=list(cell.trust_envelope.sources),
-        confidence_breakdown=breakdown,
-        assumptions={
-            **cell.trust_envelope.assumptions,
-            "workload_profile": workload.slug,
-            "avg_input_tokens": workload.avg_input_tokens,
-            "avg_output_tokens": workload.avg_output_tokens,
-            "budget_usd": budget_usd,
-        },
-        caveats=[
-            *cell.trust_envelope.caveats,
-            "est_total_prompts and est_wallclock_minutes are conditioned "
-            "on the named workload_profile. Real traffic with a different "
-            "(avg_input_tokens, avg_output_tokens) shape will yield "
-            "different counts.",
-        ],
-        freshness=dict(cell.trust_envelope.freshness),
-        verify_links=list(cell.trust_envelope.verify_links),
-    )
+    # Envelope construction lives in `trust/builders.py` per
+    # spec/M09 § Common pitfalls #1 — every tool builds its
+    # envelope through the builders module so the
+    # `workload_assumption` domain (and the verbatim caveat) is
+    # populated identically across every tool that derives a
+    # workload-conditioned number.
+    envelope = build_budget_plan_envelope(cell=cell, workload=workload, budget_usd=budget_usd)
 
     return BudgetPlanRow(
         cost_cell=cell,

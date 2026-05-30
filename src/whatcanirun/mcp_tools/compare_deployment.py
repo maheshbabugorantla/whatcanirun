@@ -22,12 +22,8 @@ from pydantic import BaseModel, ConfigDict
 from whatcanirun.catalog.workload import WorkloadProfile
 from whatcanirun.mcp_tools.dispatch import UnknownModelResponse
 from whatcanirun.plan.cost_cells import CostCell
-from whatcanirun.trust.envelope import (
-    ConfidenceDomain,
-    Source,
-    SourceName,
-    TrustEnvelope,
-)
+from whatcanirun.trust.builders import build_deployment_comparison_envelope
+from whatcanirun.trust.envelope import TrustEnvelope
 
 Verdict = Literal["cloud_gpu_rental", "hosted_api_token", "tie", "unknown"]
 
@@ -95,33 +91,6 @@ def _verdict(cloud_cost: float | None, hosted_cost: float | None) -> Verdict:
     return "cloud_gpu_rental" if cloud_cost < hosted_cost else "hosted_api_token"
 
 
-def _merge_sources(*cells: CostCell | None) -> list[Source]:
-    """Dedup sources across input CostCells by `(name, detail)`
-    so the wrapping envelope doesn't duplicate the same upstream
-    contribution. Order preserved (first-seen wins)."""
-    seen: dict[tuple[SourceName, str], Source] = {}
-    for cell in cells:
-        if cell is None:
-            continue
-        for src in cell.trust_envelope.sources:
-            seen.setdefault((src.name, src.detail), src)
-    return list(seen.values())
-
-
-def _merge_freshness(*cells: CostCell | None) -> dict[str, dt.datetime]:
-    """Min-by-source freshness rollup across input cells. If two
-    cells share a source, the older timestamp wins (weakest-link
-    semantics propagate to the freshness map too)."""
-    merged: dict[str, dt.datetime] = {}
-    for cell in cells:
-        if cell is None:
-            continue
-        for source_name, ts in cell.trust_envelope.freshness.items():
-            if source_name not in merged or ts < merged[source_name]:
-                merged[source_name] = ts
-    return merged
-
-
 def build_deployment_comparison(
     *,
     cloud_cell: CostCell | None,
@@ -131,9 +100,10 @@ def build_deployment_comparison(
 ) -> DeploymentComparison:
     """Pure builder. Synthesizes per-prompt costs from the
     workload profile, picks the cheaper-per-prompt verdict, and
-    wraps the whole thing in a trust envelope that includes
-    `workload_assumption` (per spec/SHARED.md — workload-derived
-    figures must carry that domain).
+    wraps the whole thing in a trust envelope (built by
+    `build_deployment_comparison_envelope` in trust/builders.py
+    so the workload_assumption + verify_links handling stays in
+    one place).
 
     `cloud_cell` and `hosted_cell` are nullable so the builder
     handles the partial-data case (Slice L's Case 2 dispatch
@@ -143,38 +113,10 @@ def build_deployment_comparison(
     cloud_per_prompt = _cost_per_prompt_cloud(cloud_cell, workload) if cloud_cell else None
     hosted_per_prompt = _cost_per_prompt_hosted(hosted_cell, workload) if hosted_cell else None
 
-    breakdown: dict[ConfidenceDomain, float] = {
-        # Per spec/SHARED.md § Calibration: tool-arg-supplied
-        # workload profile = 0.95 (only `own_measured` style
-        # user-supplied tokens reach 1.0; defaulted = 0.2 — which
-        # M09 elicits to avoid).
-        "workload_assumption": 0.95,
-    }
-
-    # Carry forward the worst per-side confidence per shared
-    # domain so the wrapping envelope inherits the weakest link.
-    for cell in (cloud_cell, hosted_cell):
-        if cell is None:
-            continue
-        for domain, score in cell.trust_envelope.confidence_breakdown.items():
-            existing = breakdown.get(domain)
-            breakdown[domain] = min(existing, score) if existing is not None else score
-
-    envelope = TrustEnvelope(
-        sources=_merge_sources(cloud_cell, hosted_cell),
-        confidence_breakdown=breakdown,
-        assumptions={
-            "workload_profile": workload.slug,
-            "avg_input_tokens": workload.avg_input_tokens,
-            "avg_output_tokens": workload.avg_output_tokens,
-        },
-        caveats=[
-            "Per-prompt cost is conditioned on the workload profile's "
-            "(avg_input_tokens, avg_output_tokens). Real traffic with "
-            "different token shape will produce different per-prompt cost."
-        ],
-        freshness=_merge_freshness(cloud_cell, hosted_cell),
-        verify_links=[],
+    envelope = build_deployment_comparison_envelope(
+        cloud_cell=cloud_cell,
+        hosted_cell=hosted_cell,
+        workload=workload,
     )
 
     return DeploymentComparison(
