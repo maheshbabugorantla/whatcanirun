@@ -274,8 +274,17 @@ def _build_case_2_envelope(
     age = dt.datetime.now(dt.UTC) - generated_at
     pricing_score = freshness_confidence("computeprices", age)
 
+    # `throughput=0.0` matches M08's `_partial_envelope_for_hosted_api`
+    # shape — the Case 2 CostCell carries `tps_estimate.confidence=0.0`
+    # (requires_measurement), so the envelope must surface that as
+    # the `throughput` domain. Without it, spec/M09 relay rule #2
+    # ("when confidence_breakdown.throughput == 0.0, the server is
+    # refusing to estimate that combination") can't fire uniformly
+    # across hosted-API CostCell sources — M08-built ones would
+    # carry the signal, M09 Case 2 ones would silently swallow it.
     breakdown: dict[ConfidenceDomain, float] = {
         "model_architecture": 0.0,  # we have NO architecture data
+        "throughput": 0.0,  # requires_measurement, matches tps_estimate.confidence
         "pricing": pricing_score,
         "freshness": pricing_score,
     }

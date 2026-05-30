@@ -648,9 +648,14 @@ async def test_user_asks_about_cp_only_model_for_pricing(
             row_dict = _as_dict(row)
             assert row_dict["deployment_mode"] == "hosted_api_token"
             # Spec: model_architecture=0.0 so the LLM client knows
-            # this is partial data.
+            # this is partial data. throughput=0.0 matches M08's
+            # hosted-API envelope shape so spec/M09 relay rule #2
+            # ("confidence_breakdown.throughput == 0.0 means the
+            # server is refusing") fires uniformly across all
+            # hosted-API CostCell sources.
             breakdown = row_dict["trust_envelope"]["confidence_breakdown"]
             assert breakdown.get("model_architecture") == 0.0
+            assert breakdown.get("throughput") == 0.0
             # The verbatim Case 2 caveat travels with each row.
             assert any(
                 "Architecture data not available" in c
