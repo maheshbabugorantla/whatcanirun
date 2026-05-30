@@ -217,6 +217,8 @@ async def budget_to_plan(
     # caveat AND workload_assumption=0.95 (because the prompt count
     # is still workload-derived).
     if isinstance(dispatched, Case2HostedOnly):
+        import datetime as _dt
+
         partial_cells = build_case_2_partial_cells(
             model_slug=model_slug,
             catalog_row=dispatched.catalog_row,
@@ -227,6 +229,7 @@ async def budget_to_plan(
             batch_size=1,
             context_length=4096,
             llm_prices_generated_at=deps.llm_prices_generated_at,
+            now=_dt.datetime.now(_dt.UTC),
         )
         return build_budget_plan(
             budget_usd=budget_usd,

@@ -272,6 +272,7 @@ def _build_case_2_envelope(
     *,
     price: LlmPriceRow,
     generated_at: dt.datetime,
+    now: dt.datetime,
 ) -> TrustEnvelope:
     """Build the trust envelope for one Case 2 partial CostCell.
 
@@ -282,6 +283,11 @@ def _build_case_2_envelope(
     - the verbatim Case 2 caveat
     - the default availability caveat is on the CostCell itself
 
+    `now` is the reference time for age / staleness math, threaded
+    in by the caller so the builder stays deterministic — same
+    convention as `build_fit_check_envelope`. Tests pin a fixed
+    value; the tool wrapper passes `datetime.now(UTC)`.
+
     `assumptions` includes the LLM hosted-API pricing tier (CP's
     `pricing_type`) — spec/M09 calls out that the hosted-API tier
     can't ride in the CostCell's `pricing_type` field (which is
@@ -291,7 +297,7 @@ def _build_case_2_envelope(
     # cold-cache / CP-unreachable case). No None-guard needed; the
     # cold-cache subtraction yields a multi-millennium timedelta
     # which `freshness_confidence` correctly maps to the lowest band.
-    age = dt.datetime.now(dt.UTC) - generated_at
+    age = now - generated_at
     pricing_score = freshness_confidence("computeprices", age)
 
     # `throughput=0.0` matches M08's `_partial_envelope_for_hosted_api`
@@ -344,6 +350,7 @@ def build_case_2_partial_cells(
     batch_size: int,
     context_length: int,
     llm_prices_generated_at: dt.datetime,
+    now: dt.datetime,
 ) -> list[CostCell]:
     """Build hosted_api_token-only CostCells from CP llm_prices
     for a model that's CP-known but not in our tracked-models set
@@ -390,7 +397,7 @@ def build_case_2_partial_cells(
                 cost_per_m_output_usd_self_hosted=None,
                 availability_modeled=False,
                 trust_envelope=_build_case_2_envelope(
-                    price=price, generated_at=llm_prices_generated_at
+                    price=price, generated_at=llm_prices_generated_at, now=now
                 ),
             )
         )
