@@ -266,7 +266,12 @@ def _build_case_2_envelope(
     `pricing_type`) — spec/M09 calls out that the hosted-API tier
     can't ride in the CostCell's `pricing_type` field (which is
     the GPU `on_demand|spot` enum), so it travels here instead."""
-    age = dt.datetime.now(dt.UTC) - generated_at if generated_at else dt.timedelta.max
+    # `generated_at` is always a `datetime` (RuntimeDeps default is
+    # `datetime.min` with UTC tzinfo — a deliberate sentinel for the
+    # cold-cache / CP-unreachable case). No None-guard needed; the
+    # cold-cache subtraction yields a multi-millennium timedelta
+    # which `freshness_confidence` correctly maps to the lowest band.
+    age = dt.datetime.now(dt.UTC) - generated_at
     pricing_score = freshness_confidence("computeprices", age)
 
     breakdown: dict[ConfidenceDomain, float] = {
