@@ -83,6 +83,29 @@ mcp.tool(_compare_deployment_modes, name="compare_deployment_modes")
 mcp.tool(_budget_to_plan, name="budget_to_plan")
 
 
+# --------------------------------------------------------------- Resources
+# `cost-cells://current` + `cost-cells://provenance` — see
+# `whatcanirun/mcp_tools/resources.py` for the handlers.
+
+from whatcanirun.mcp_tools.resources import (  # noqa: E402
+    render_current_cost_cells as _render_current_cost_cells,
+)
+from whatcanirun.mcp_tools.resources import (  # noqa: E402
+    render_provenance_document as _render_provenance_document,
+)
+
+mcp.resource(
+    "cost-cells://current",
+    name="cost-cells-current",
+    mime_type="application/vnd.apache.parquet",
+)(_render_current_cost_cells)
+mcp.resource(
+    "cost-cells://provenance",
+    name="cost-cells-provenance",
+    mime_type="application/json",
+)(_render_provenance_document)
+
+
 def main() -> None:
     """`uvx whatcanirun-mcp` entry point. Runs the FastMCP stdio
     transport by default — the calling client (Claude Desktop,
