@@ -268,6 +268,50 @@ def test_both_cells_preserved_with_their_own_envelopes() -> None:
     assert isinstance(out.hosted_api_token.trust_envelope, TrustEnvelope)
 
 
+def test_envelope_merges_caveats_from_both_sides() -> None:
+    """Copilot review #15 round 2 #2: wrapping envelope must
+    propagate component caveats. Without this, provider-specific
+    or mode-specific caveats living on the per-side CostCells
+    would silently vanish when the LLM client reads only the
+    DeploymentComparison envelope. `build_budget_plan_envelope`
+    already preserves underlying caveats; this helper makes the
+    multi-cell builder symmetric."""
+
+    def _envelope_with_caveats(caveats: list[str]) -> TrustEnvelope:
+        return TrustEnvelope(
+            sources=[
+                Source(
+                    name="computeprices",
+                    detail="test",
+                    last_updated=dt.datetime(2026, 5, 28, tzinfo=dt.UTC),
+                )
+            ],
+            confidence_breakdown={"pricing": 0.95, "freshness": 0.95},
+            caveats=caveats,
+        )
+
+    cloud_caveat = "cloud side: provider-specific preemption note"
+    hosted_caveat = "hosted side: rate-limit disclosure"
+    cloud = _cloud_cell().model_copy(
+        update={"trust_envelope": _envelope_with_caveats([cloud_caveat])}
+    )
+    hosted = _hosted_cell().model_copy(
+        update={"trust_envelope": _envelope_with_caveats([hosted_caveat])}
+    )
+
+    out = build_deployment_comparison(
+        cloud_cell=cloud,
+        hosted_cell=hosted,
+        workload=_chat_assistant(),
+        now=_now(),
+    )
+    caveats = out.trust_envelope.caveats
+    assert cloud_caveat in caveats, "cloud-side caveat dropped"
+    assert hosted_caveat in caveats, "hosted-side caveat dropped"
+    # And the workload caveat the builder adds is still there.
+    assert any("workload_profile" in c for c in caveats), "workload caveat dropped after merge"
+
+
 def test_envelope_merges_verify_links_from_both_sides() -> None:
     """Spec/SHARED.md: every numerical-output envelope must expose
     `verify_links` so the LLM client can render a 'verify this'

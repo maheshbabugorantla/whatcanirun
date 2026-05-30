@@ -203,6 +203,26 @@ def _merge_verify_links(*cells: CostCell | None) -> list[str]:
     return list(seen.keys())
 
 
+def _merge_caveats(*cells: CostCell | None) -> list[str]:
+    """Union of `caveats` across input cells, dedup'd while
+    preserving insertion order. Symmetric with `_merge_sources`
+    and `_merge_verify_links` — a wrapping envelope must surface
+    every caveat its component cells carried, or the client loses
+    the disclosure when reading only the outer envelope.
+
+    `build_budget_plan_envelope` already preserves the underlying
+    cell's caveats via the `*cell.trust_envelope.caveats` splat
+    in its caveat list; this helper does the same for the
+    multi-cell `build_deployment_comparison_envelope`."""
+    seen: dict[str, None] = {}
+    for cell in cells:
+        if cell is None:
+            continue
+        for caveat in cell.trust_envelope.caveats:
+            seen.setdefault(caveat, None)
+    return list(seen.keys())
+
+
 # ============================================================ budget_to_plan
 
 
@@ -414,7 +434,13 @@ def build_deployment_comparison_envelope(
             "avg_input_tokens": workload.avg_input_tokens,
             "avg_output_tokens": workload.avg_output_tokens,
         },
-        caveats=[_WORKLOAD_CAVEAT],
+        # Preserve component caveats so an LLM client reading the
+        # wrapping envelope sees every disclosure either side
+        # carried (provider-specific caveats, mode-specific
+        # availability caveats, etc.). Symmetric with
+        # `build_budget_plan_envelope`, which preserves
+        # `*cell.trust_envelope.caveats` for the same reason.
+        caveats=[*_merge_caveats(cloud_cell, hosted_cell), _WORKLOAD_CAVEAT],
         freshness=_merge_freshness(cloud_cell, hosted_cell),
         verify_links=_merge_verify_links(cloud_cell, hosted_cell),
     )
