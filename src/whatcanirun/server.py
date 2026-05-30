@@ -82,6 +82,10 @@ mcp.tool(_find_cheapest_deployment, name="find_cheapest_deployment")
 mcp.tool(_compare_deployment_modes, name="compare_deployment_modes")
 mcp.tool(_budget_to_plan, name="budget_to_plan")
 
+from whatcanirun.mcp_tools.dispatch import resolve_model as _resolve_model  # noqa: E402
+
+mcp.tool(_resolve_model, name="resolve_model")
+
 
 # --------------------------------------------------------------- Resources
 # `cost-cells://current` + `cost-cells://provenance` — see
