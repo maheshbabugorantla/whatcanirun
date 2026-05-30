@@ -151,9 +151,6 @@ def query_cost_cells(
     cells: list[CostCell] = []
 
     # Build a slug → catalog lookup for fast gpu resolution.
-    # (No model_by_slug today — both branches iterate the model
-    # catalog directly. Reserved for future use when the
-    # hosted_api_token branch needs Model metadata.)
     gpu_by_slug = {g.slug: g for g in gpu_catalog}
 
     # Pre-filter all dimensions.
@@ -404,24 +401,22 @@ def _partial_envelope_for_gpu_rental(
     # BenchmarkCell row (Tier 1a/1b), Source.last_updated should
     # reflect the BENCHMARK's measured_at, not the GPU price's
     # last_updated (which is a CP catalog freshness, unrelated to
-    # when the anchor was actually measured). Look up the matched
-    # cell here so the timestamp is correct.
-    matched_anchor = _find_matched_bench_cell(
-        bench_cells=bench_cells,
-        gpu_slug=gpu_slug,
-        model_slug=model_slug,
-        quant_slug=quant_slug,
-        batch_size=batch_size,
-        context_length=context_length,
-    )
+    # when the anchor was actually measured). The lookup happens
+    # ONLY inside the Tier 1a/1b branches that consume it — Tier
+    # 2/3/4 don't need it, and scanning bench_cells unconditionally
+    # would add avoidable O(len(bench_cells)) work per cell.
 
     if tps.source == "own_measured":
         # v2 only — but the dispatch logic is here so the v2
         # unlock is a no-op at the trust envelope layer.
-        anchor_ts = (
-            datetime.combine(matched_anchor.measured_at, datetime.min.time(), tzinfo=dt_module.UTC)
-            if matched_anchor is not None
-            else price.last_updated
+        anchor_ts = _anchor_last_updated(
+            bench_cells,
+            gpu_slug,
+            model_slug,
+            quant_slug,
+            batch_size,
+            context_length,
+            price.last_updated,
         )
         sources.append(
             Source(
@@ -433,10 +428,14 @@ def _partial_envelope_for_gpu_rental(
         if tps.source_url:
             verify_links.append(tps.source_url)
     elif tps.source == "public_benchmark_anchor":
-        anchor_ts = (
-            datetime.combine(matched_anchor.measured_at, datetime.min.time(), tzinfo=dt_module.UTC)
-            if matched_anchor is not None
-            else price.last_updated
+        anchor_ts = _anchor_last_updated(
+            bench_cells,
+            gpu_slug,
+            model_slug,
+            quant_slug,
+            batch_size,
+            context_length,
+            price.last_updated,
         )
         sources.append(
             Source(
@@ -534,6 +533,33 @@ def _freshness_from_sources(sources: list[Source]) -> dict[str, datetime]:
     impossible to cite a Source whose timestamp the consumer can't
     look up — the M08 round-3 Copilot finding."""
     return {src.name: src.last_updated for src in sources}
+
+
+def _anchor_last_updated(
+    bench_cells: list[BenchmarkCell],
+    gpu_slug: str,
+    model_slug: str,
+    quant_slug: str,
+    batch_size: int,
+    context_length: int,
+    fallback: datetime,
+) -> datetime:
+    """Tier 1a/1b helper: return the matched BenchmarkCell's
+    measured_at as a UTC datetime, or `fallback` (typically the
+    price's last_updated) when no cell matches. Lookup is deferred
+    into this helper so callers in non-anchor tiers (Tier 2/3/4)
+    avoid the O(len(bench_cells)) scan they don't need."""
+    cell = _find_matched_bench_cell(
+        bench_cells=bench_cells,
+        gpu_slug=gpu_slug,
+        model_slug=model_slug,
+        quant_slug=quant_slug,
+        batch_size=batch_size,
+        context_length=context_length,
+    )
+    if cell is None:
+        return fallback
+    return datetime.combine(cell.measured_at, datetime.min.time(), tzinfo=dt_module.UTC)
 
 
 def _find_matched_bench_cell(

@@ -40,6 +40,7 @@ _TOOL_PATH_FUNCTIONS = {
     "_partial_envelope_for_hosted_api",
     "_freshness_from_sources",
     "_find_matched_bench_cell",
+    "_anchor_last_updated",
 }
 
 # Resource-path functions — ALLOWED to import duckdb / use SQL.
