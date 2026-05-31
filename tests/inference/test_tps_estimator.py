@@ -122,9 +122,15 @@ def _anchor(
     batch: int = 1,
     ctx: int = 4096,
     tps: float = 35.2,
-    source: str = "public_benchmark_anchor",
+    source: str = "own_measured",
 ) -> BenchmarkCell:
-    return BenchmarkCell(
+    """v2-ready bench-cell fixture. Post-M10-deferral the only
+    tier that still consumes bench_cells in the estimator is
+    Tier 1a (own_measured), so the helper defaults to that source.
+    Constructed via model_construct because v1's BenchmarkCell
+    validator rejects source='own_measured' at row construction
+    (v2's M17 unlock is to flip that validator off)."""
+    return BenchmarkCell.model_construct(
         gpu_slug=gpu,
         model_slug=model,
         quant_slug=quant,
@@ -138,7 +144,7 @@ def _anchor(
         engine_version="0.6.x",
         measured_at=date(2026, 3, 15),
         source=source,  # type: ignore[arg-type]
-        source_url="https://www.spheron.network/blog/llama-3-3-70b-fp8",
+        source_url="https://internal/run-anchor",
         notes="Single H100 SXM, FP8 quantization, batch=1, ctx=4096.",
     )
 
