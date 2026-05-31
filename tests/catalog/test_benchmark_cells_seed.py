@@ -34,9 +34,18 @@ _SEED_PARQUET = _REPO_ROOT / "seeds" / "benchmark_cells.parquet"
 def test_seed_parquet_loads_without_error() -> None:
     """Spec acceptance criterion 5 prerequisite: the seed file
     exists, is parseable as parquet, and every row passes
-    BenchmarkCell validation. Failing this fails M07 merge."""
+    BenchmarkCell validation. The `>= 1 rows` floor was dropped
+    with the M10 deferral (2026-05-31) — v1 ships with a zero-row
+    parquet because Tier 1b public_benchmark_anchor cells were
+    deferred to v2's M17. The empty parquet still exists so the
+    schema-validation surface + the @pytest.mark.network URL
+    check below stay live for v2's unlock."""
     rows = load_benchmark_cells(_SEED_PARQUET)
-    assert len(rows) >= 1, "seed parquet is empty — M07 needs at least 1 anchor"
+    # Zero rows is the documented v1 state. Any row that does
+    # land here in the future MUST pass BenchmarkCell validation
+    # (the load_benchmark_cells call above would raise if it
+    # didn't), so just calling the loader is the assertion.
+    assert isinstance(rows, list)
 
 
 def test_every_seed_row_is_public_benchmark_anchor() -> None:
