@@ -131,10 +131,10 @@ def query_cost_cells(
     gpu_catalog: list[GpuCatalogRow],
     model_catalog: list[Model],
     quantizations: list[Quantization],
-    bench_cells: list[BenchmarkCell],
     aa_observations: list[AaModelRow] | None,
     filters: CostCellFilters,
     aa_data_freshness: datetime | None = None,
+    bench_cells: list[BenchmarkCell] | None = None,
 ) -> list[CostCell]:
     """Tool-call hot path. Pure Python list comprehensions over
     in-memory caches. NO SQL.
@@ -364,13 +364,13 @@ def _partial_envelope_for_gpu_rental(
     price: GpuPriceRow,
     tps: TpsEstimate,
     model: Model,
-    bench_cells: list[BenchmarkCell],
     gpu_slug: str,
     model_slug: str,
     quant_slug: str,
     batch_size: int,
     context_length: int,
     aa_data_freshness: datetime | None,
+    bench_cells: list[BenchmarkCell] | None = None,
 ) -> TrustEnvelope:
     """M08 builds the per-cell envelope with the data it has
     direct access to: pricing source + freshness, throughput
@@ -396,7 +396,14 @@ def _partial_envelope_for_gpu_rental(
     `tps.source_url` (populated for Tier 1a/1b anchors) is
     threaded into verify_links so the LLM client can link the
     user to the original methodology disclosure.
+
+    `bench_cells` defaults to `[]` post-M10-deferral; in v1 the
+    Tier 1a / Tier 1b branches below never fire because the tps
+    ladder can't produce those sources without bench data. The
+    branches stay for v2 unlock.
     """
+    if bench_cells is None:
+        bench_cells = []
     sources = [
         Source(
             name="computeprices",
@@ -640,8 +647,8 @@ def render_cost_cells_resource(
     gpu_catalog: list[GpuCatalogRow],
     model_catalog: list[Model],
     quantizations: list[Quantization],
-    bench_cells: list[BenchmarkCell],
     aa_observations: list[AaModelRow] | None,
+    bench_cells: list[BenchmarkCell] | None = None,
 ) -> bytes:
     """Materialize ALL current cost cells as Parquet bytes for the
     `cost-cells://current` MCP resource. The ONLY function in this

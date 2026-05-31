@@ -1,16 +1,24 @@
 """M09 Slice L (step 2): runtime dependency loader for the MCP tools.
 
-The cost-cells query layer accepts 7 collections via
-`query_cost_cells(...)`. This module loads SIX of them into
+The cost-cells query layer accepts SIX collections via
+`query_cost_cells(...)`. This module loads FIVE of them into
 `RuntimeDeps`: gpu_prices, llm_prices, gpu_catalog, model_catalog,
-quantizations, bench_cells (plus the seed-backed
-workload_profiles + tracked_models that other tools need). The
-seventh — `aa_observations` — is intentionally NOT loaded here:
-M04's optional AA-anchored throughput enrichment is gated behind
-a user-supplied `AA_API_KEY` and is not part of M09's wiring.
-Every numerical tool passes `aa_observations=None` into
-`query_cost_cells` for now; an `aa_observations` slot is on the
-M07/M11 follow-up list when AA enrichment becomes load-bearing.
+quantizations (plus the seed-backed workload_profiles +
+tracked_models that other tools need).
+
+The two collections NOT loaded here:
+- `aa_observations` — M04's optional AA-anchored throughput
+  enrichment is gated behind a user-supplied `AA_API_KEY` and
+  is not part of M09's wiring. Every numerical tool passes
+  `aa_observations=None` for now; an `aa_observations` slot is
+  on the M11 follow-up list when AA enrichment becomes
+  load-bearing.
+- `bench_cells` — Tier 1b public_benchmark_anchor cells were
+  deferred to v2 (M10 deferral, 2026-05-31). v1 callers omit the
+  parameter entirely; the tps_estimator's Tier 1a own_measured
+  branch stays as v2-ready dead code (bench_cells defaults to
+  `[]` at the estimator). When v2's M17 GuideLLM cells land,
+  this loader adds the slot back.
 
 Loading on every tool call is acceptable at v1 scale (~ms
 latency to read disk + parse YAML/Parquet/JSON); M11 may add a
@@ -39,8 +47,6 @@ from typing import Any
 
 import yaml
 
-from whatcanirun.catalog.benchmark_cells import BenchmarkCell
-from whatcanirun.catalog.benchmark_cells_loader import load_benchmark_cells
 from whatcanirun.catalog.hf_model import Model
 from whatcanirun.catalog.loaders import (
     load_quantizations,
@@ -76,7 +82,8 @@ class RuntimeDeps:
     model_catalog: list[Model] = field(default_factory=list)
     quantizations: list[Quantization] = field(default_factory=list)
     workload_profiles: list[WorkloadProfile] = field(default_factory=list)
-    bench_cells: list[BenchmarkCell] = field(default_factory=list)
+    # bench_cells removed with M10 deferral (2026-05-31). v2 M17
+    # re-adds when GuideLLM-measured cells arrive.
     # CP `meta.generated_at` timestamps per endpoint — the canonical
     # freshness anchor for the GPU specs and LLM pricing domains.
     # `datetime.min` when CP was unreachable; the freshness_confidence
@@ -229,10 +236,12 @@ async def load_runtime_deps(
     config_dir = config_dir or USER_CONFIG_DIR
 
     # Seed-backed loads (always present in a normal install).
+    # bench_cells loading removed with M10 deferral (2026-05-31).
+    # The empty parquet at seeds/benchmark_cells.parquet still
+    # exists for the @pytest.mark.network URL test + v2 unlock
+    # path; production code no longer reads it.
     quantizations = load_quantizations(seeds_dir / "quantizations.yaml")
     workload_profiles = load_workload_profiles(seeds_dir / "workload_profiles.yaml")
-    bench_cells_path = seeds_dir / "benchmark_cells.parquet"
-    bench_cells = load_benchmark_cells(bench_cells_path) if bench_cells_path.exists() else []
 
     # CP cache reads — graceful degradation on:
     #   - unreachable CP / cold cache (ComputePricesUnavailable)
@@ -295,6 +304,5 @@ async def load_runtime_deps(
         model_catalog=model_catalog,
         quantizations=quantizations,
         workload_profiles=workload_profiles,
-        bench_cells=bench_cells,
         tracked_models=tracked_models,
     )

@@ -55,3 +55,10 @@ seeds/benchmark_cells.parquet.tmp
 # Claude Code milestone-completion sentinel (transient, never tracked)
 .claude/.compact-pending
 logs/
+
+# Local-only directory for copyrighted reference material (paid
+# books, PDFs, EPUBs) used during M10 bench-cell curation. Never
+# commit the source material itself; cite the publisher URL in
+# the cell's source_url field and the specific chapter/section
+# in the notes field per the trust contract.
+references/

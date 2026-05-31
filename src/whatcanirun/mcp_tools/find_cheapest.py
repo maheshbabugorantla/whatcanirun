@@ -136,7 +136,6 @@ async def find_cheapest_deployment(
         # model in so the just-synced row is visible.
         model_catalog=model_catalog_with_resolved(deps, dispatched.model),
         quantizations=deps.quantizations,
-        bench_cells=deps.bench_cells,
         aa_observations=None,
         filters=CostCellFilters(
             model_slug=model_slug,
