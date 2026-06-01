@@ -1,0 +1,918 @@
+- slug: a10
+  name: A10
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 24
+  release_date: '2021-01-01'
+  specs:
+    cuda_cores: 9216
+    fp16_tflops: 125
+    fp32_tflops: 31.2
+    int8_tops: 250
+    manufacturing_process_nm: 8
+    max_power_watt: 150
+    memory_bandwidth_gbps: 600
+    memory_interface_bit: 384
+    rt_cores: 72
+    tdp_watt: 150
+    tensor_cores: 288
+- slug: a100pcie
+  name: A100 PCIE
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 40
+  release_date: '2020-06-22'
+  specs:
+    cuda_cores: 6912
+    fp16_tflops: 312
+    fp32_tflops: 19.5
+    fp64_tflops: 9.7
+    int8_tops: 624
+    manufacturing_process_nm: 7
+    max_power_watt: 250
+    memory_bandwidth_gbps: 1555
+    memory_interface_bit: 5120
+    rt_cores: 0
+    tdp_watt: 250
+    tensor_cores: 432
+- slug: a100sxm
+  name: A100 SXM
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 80
+  release_date: '2020-11-16'
+  specs:
+    cuda_cores: 6912
+    fp16_tflops: 312
+    fp32_tflops: 19.5
+    fp64_tflops: 9.7
+    int8_tops: 624
+    manufacturing_process_nm: 7
+    max_power_watt: 400
+    memory_bandwidth_gbps: 2039
+    memory_interface_bit: 5120
+    rt_cores: 0
+    tdp_watt: 400
+    tensor_cores: 432
+- slug: a16
+  name: A16
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 64
+  release_date: '2021-04-12'
+  specs:
+    cuda_cores: 2560
+    fp16_tflops: 35
+    fp32_tflops: 17.5
+    max_power_watt: 250
+    memory_bandwidth_gbps: 800
+    tdp_watt: 250
+- slug: a2
+  name: A2
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 16
+  release_date: '2021-11-09'
+  specs:
+    cuda_cores: 1280
+    fp16_tflops: 36
+    fp32_tflops: 4.5
+    max_power_watt: 60
+    memory_bandwidth_gbps: 200
+    tdp_watt: 60
+    tensor_cores: 40
+- slug: a30
+  name: A30
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 24
+  release_date: '2021-04-12'
+  specs:
+    cuda_cores: 3584
+    fp16_tflops: 165
+    fp32_tflops: 10.3
+    fp64_tflops: 5.2
+    max_power_watt: 165
+    memory_bandwidth_gbps: 933
+    tdp_watt: 165
+    tensor_cores: 224
+- slug: a40
+  name: A40
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 48
+  release_date: '2020-01-01'
+  specs:
+    cuda_cores: 10752
+    fp16_tflops: 149.7
+    fp32_tflops: 37.4
+    int8_tops: 299.3
+    manufacturing_process_nm: 8
+    max_power_watt: 300
+    memory_bandwidth_gbps: 696
+    memory_interface_bit: 384
+    rt_cores: 84
+    tdp_watt: 300
+    tensor_cores: 336
+- slug: b100
+  name: B100
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 192
+  release_date: '2024-03-18'
+  specs:
+    fp16_tflops: 3500
+    fp32_tflops: 60
+    max_power_watt: 700
+    memory_bandwidth_gbps: 8000
+    tdp_watt: 700
+- slug: b200
+  name: B200
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 192
+  release_date: '2024-01-01'
+  specs:
+    fp16_tflops: 4500
+    fp32_tflops: 80
+    fp64_tflops: 40
+    int8_tops: 9000
+    max_power_watt: 1000
+    memory_bandwidth_gbps: 8000
+    tdp_watt: 1000
+- slug: gaudi2
+  name: Gaudi 2
+  manufacturer: Intel
+  architecture: Gaudi
+  vram_gb: 96
+  release_date: '2022-05-10'
+  specs:
+    fp16_tflops: 432
+    max_power_watt: 600
+    memory_bandwidth_gbps: 2450
+    tdp_watt: 600
+- slug: gaudi3
+  name: Gaudi 3
+  manufacturer: Intel
+  architecture: Gaudi
+  vram_gb: 128
+  release_date: '2024-04-09'
+  specs:
+    fp16_tflops: 1835
+    max_power_watt: 900
+    memory_bandwidth_gbps: 3675
+    tdp_watt: 900
+- slug: gb200
+  name: GB200
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 384
+  release_date: '2024-03-18'
+  specs:
+    fp16_tflops: 9000
+    fp32_tflops: 160
+    max_power_watt: 2700
+    memory_bandwidth_gbps: 16000
+    tdp_watt: 2700
+- slug: gb300
+  name: GB300
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 576
+  release_date: '2025-03-18'
+  specs:
+    fp16_tflops: 10000
+    fp32_tflops: 200
+    max_power_watt: 2800
+    memory_bandwidth_gbps: 16000
+    tdp_watt: 2700
+- slug: gh200
+  name: GH200
+  manufacturer: NVIDIA
+  architecture: Hopper
+  vram_gb: 96
+  release_date: '2023-01-01'
+  specs:
+    cuda_cores: 16896
+    fp16_tflops: 990
+    fp32_tflops: 67
+    fp64_tflops: 34
+    int8_tops: 1979
+    manufacturing_process_nm: 4
+    max_power_watt: 1000
+    memory_bandwidth_gbps: 4000
+    tdp_watt: 700
+    tensor_cores: 528
+- slug: h100nvl
+  name: H100 NVL
+  manufacturer: NVIDIA
+  architecture: Hopper
+  vram_gb: 94
+  release_date: '2023-03-21'
+  specs:
+    cuda_cores: 14592
+    fp16_tflops: 835
+    fp32_tflops: 67
+    fp64_tflops: 34
+    max_power_watt: 400
+    memory_bandwidth_gbps: 3958
+    tdp_watt: 400
+    tensor_cores: 456
+- slug: h100pcie
+  name: H100 PCIe
+  manufacturer: NVIDIA
+  architecture: Hopper
+  vram_gb: 80
+  release_date: '2022-09-20'
+  specs:
+    cuda_cores: 14592
+    fp16_tflops: 756
+    fp32_tflops: 51
+    fp64_tflops: 26
+    max_power_watt: 350
+    memory_bandwidth_gbps: 2000
+    tdp_watt: 350
+    tensor_cores: 456
+- slug: h100
+  name: H100 SXM
+  manufacturer: NVIDIA
+  architecture: Hopper
+  vram_gb: 80
+  release_date: '2022-03-22'
+  specs:
+    cuda_cores: 14592
+    fp16_tflops: 990
+    fp32_tflops: 67
+    fp64_tflops: 34
+    max_power_watt: 700
+    memory_bandwidth_gbps: 3350
+    tdp_watt: 700
+    tensor_cores: 456
+- slug: h200
+  name: H200
+  manufacturer: NVIDIA
+  architecture: Hopper
+  vram_gb: 141
+  release_date: '2023-01-01'
+  specs:
+    cuda_cores: 16896
+    fp16_tflops: 990
+    fp32_tflops: 67
+    fp64_tflops: 34
+    int8_tops: 1979
+    manufacturing_process_nm: 4
+    max_power_watt: 700
+    memory_bandwidth_gbps: 4800
+    tdp_watt: 700
+    tensor_cores: 528
+- slug: hgx-b300
+  name: HGX B300
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 288
+  release_date: '2025-03-18'
+  specs:
+    fp16_tflops: 5000
+    fp32_tflops: 100
+    max_power_watt: 1400
+    memory_bandwidth_gbps: 8000
+    tdp_watt: 1100
+- slug: l4
+  name: L4
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 24
+  release_date: '2023-03-21'
+  specs:
+    cuda_cores: 7424
+    fp16_tflops: 121
+    fp32_tflops: 30.29
+    max_power_watt: 72
+    memory_bandwidth_gbps: 300
+    tdp_watt: 72
+    tensor_cores: 232
+- slug: l40
+  name: L40
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 40
+  release_date: '2022-10-13'
+  specs:
+    cuda_cores: 18176
+    fp16_tflops: 181.05
+    fp32_tflops: 90.5
+    fp64_tflops: 1.41
+    int8_tops: 362
+    manufacturing_process_nm: 4
+    max_power_watt: 300
+    memory_bandwidth_gbps: 864
+    memory_interface_bit: 384
+    rt_cores: 142
+    tdp_watt: 300
+    tensor_cores: 568
+- slug: l40s
+  name: L40S
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 48
+  release_date: '2023-01-01'
+  specs:
+    cuda_cores: 18176
+    fp16_tflops: 362.05
+    fp32_tflops: 91.6
+    int8_tops: 733
+    manufacturing_process_nm: 4
+    max_power_watt: 350
+    memory_bandwidth_gbps: 864
+    memory_interface_bit: 384
+    rt_cores: 142
+    tdp_watt: 350
+    tensor_cores: 568
+- slug: max1100
+  name: Max 1100
+  manufacturer: Intel
+  architecture: Xe HPC
+  vram_gb: 48
+  release_date: '2022-11-09'
+  specs:
+    fp16_tflops: 419
+    fp64_tflops: 26
+    max_power_watt: 300
+    memory_bandwidth_gbps: 1229
+    tdp_watt: 300
+- slug: max1550
+  name: Max 1550
+  manufacturer: Intel
+  architecture: Xe HPC
+  vram_gb: 128
+  release_date: '2022-11-09'
+  specs:
+    fp16_tflops: 839
+    fp64_tflops: 52
+    max_power_watt: 600
+    memory_bandwidth_gbps: 3276
+    tdp_watt: 600
+- slug: mi100
+  name: MI100
+  manufacturer: AMD
+  architecture: CDNA
+  vram_gb: 32
+  release_date: '2020-11-16'
+  specs:
+    fp16_tflops: 184.6
+    fp64_tflops: 11.54
+    max_power_watt: 300
+    memory_bandwidth_gbps: 1228
+    tdp_watt: 300
+- slug: mi210
+  name: MI210
+  manufacturer: AMD
+  architecture: CDNA 2
+  vram_gb: 64
+  release_date: '2022-03-22'
+  specs:
+    fp16_tflops: 181
+    fp64_tflops: 22.63
+    max_power_watt: 300
+    memory_bandwidth_gbps: 1638
+    tdp_watt: 300
+- slug: mi250
+  name: MI250
+  manufacturer: AMD
+  architecture: CDNA 2
+  vram_gb: 128
+  release_date: '2021-11-08'
+  specs:
+    fp16_tflops: 362
+    fp64_tflops: 45.26
+    max_power_watt: 500
+    memory_bandwidth_gbps: 3276
+    tdp_watt: 500
+- slug: mi250x
+  name: MI250X
+  manufacturer: AMD
+  architecture: CDNA 2
+  vram_gb: 128
+  release_date: '2021-11-08'
+  specs:
+    fp16_tflops: 383
+    fp64_tflops: 47.87
+    max_power_watt: 560
+    memory_bandwidth_gbps: 3276
+    tdp_watt: 560
+- slug: mi300a
+  name: MI300A
+  manufacturer: AMD
+  architecture: CDNA 3
+  vram_gb: 128
+  release_date: '2023-12-06'
+  specs:
+    fp16_tflops: 980
+    max_power_watt: 760
+    memory_bandwidth_gbps: 5300
+    tdp_watt: 760
+- slug: mi300x
+  name: MI300X
+  manufacturer: AMD
+  architecture: CDNA 3
+  vram_gb: 192
+  release_date: '2023-01-01'
+  specs:
+    compute_units: 304
+    fp16_tflops: 1305
+    fp32_tflops: 163.4
+    fp64_tflops: 81.7
+    int8_tops: 2610
+    manufacturing_process_nm: 5
+    max_power_watt: 750
+    memory_bandwidth_gbps: 5300
+    tdp_watt: 750
+- slug: mi325x
+  name: MI325X
+  manufacturer: AMD
+  architecture: CDNA 3
+  vram_gb: 256
+  release_date: '2024-10-10'
+  specs:
+    compute_units: 304
+    fp16_tflops: 1300
+    manufacturing_process_nm: 5
+    max_power_watt: 1000
+    memory_bandwidth_gbps: 6000
+    memory_interface_bit: 8192
+    tensor_cores: 1216
+- slug: mi355x
+  name: MI355X
+  manufacturer: AMD
+  architecture: CDNA 4
+  vram_gb: 288
+  release_date: '2025-06-01'
+  specs:
+    fp16_tflops: 1800
+    max_power_watt: 1000
+    memory_bandwidth_gbps: 8000
+    tdp_watt: 1000
+- slug: rtx3070
+  name: RTX 3070
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 8
+  release_date: '2020-10-29'
+  specs:
+    cuda_cores: 5888
+    fp32_tflops: 20.31
+    max_power_watt: 220
+    memory_bandwidth_gbps: 448
+    memory_interface_bit: 256
+    rt_cores: 46
+    tdp_watt: 220
+    tensor_cores: 184
+- slug: rtx3070ti
+  name: RTX 3070 Ti
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 8
+  release_date: '2021-06-10'
+  specs:
+    cuda_cores: 6144
+    fp32_tflops: 21.75
+    max_power_watt: 290
+    memory_bandwidth_gbps: 608
+    memory_interface_bit: 256
+    rt_cores: 48
+    tdp_watt: 290
+    tensor_cores: 192
+- slug: rtx3080
+  name: RTX 3080
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 10
+  release_date: '2020-09-17'
+  specs:
+    cuda_cores: 8704
+    fp32_tflops: 29.77
+    max_power_watt: 320
+    memory_bandwidth_gbps: 760
+    memory_interface_bit: 320
+    rt_cores: 68
+    tdp_watt: 320
+    tensor_cores: 272
+- slug: rtx3080ti
+  name: RTX 3080 Ti
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 12
+  release_date: '2021-06-03'
+  specs:
+    cuda_cores: 10240
+    fp32_tflops: 34.1
+    max_power_watt: 350
+    memory_bandwidth_gbps: 912
+    memory_interface_bit: 384
+    rt_cores: 80
+    tdp_watt: 350
+    tensor_cores: 320
+- slug: rtx3090
+  name: RTX 3090
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 24
+  release_date: null
+  specs:
+    cuda_cores: 10496
+    fp32_tflops: 35.58
+    fp64_tflops: 0.56
+    manufacturing_process_nm: 8
+    max_power_watt: 350
+    memory_bandwidth_gbps: 936
+    memory_interface_bit: 384
+    rt_cores: 82
+    tdp_watt: 350
+    tensor_cores: 328
+- slug: rtx3090ti
+  name: RTX 3090 Ti
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 24
+  release_date: '2022-03-29'
+  specs:
+    cuda_cores: 10752
+    fp32_tflops: 40
+    max_power_watt: 450
+    memory_bandwidth_gbps: 1008
+    memory_interface_bit: 384
+    rt_cores: 84
+    tdp_watt: 450
+    tensor_cores: 336
+- slug: rtx4000ada
+  name: RTX 4000 Ada
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 20
+  release_date: '2023-08-08'
+  specs:
+    cuda_cores: 6144
+    fp32_tflops: 26.73
+    max_power_watt: 130
+    memory_bandwidth_gbps: 360
+    rt_cores: 48
+    tdp_watt: 130
+    tensor_cores: 192
+- slug: rtx4060
+  name: RTX 4060
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 8
+  release_date: '2023-06-29'
+  specs:
+    cuda_cores: 3072
+    fp32_tflops: 15.11
+    max_power_watt: 115
+    memory_bandwidth_gbps: 272
+    memory_interface_bit: 128
+    rt_cores: 24
+    tdp_watt: 115
+    tensor_cores: 96
+- slug: rtx4060ti
+  name: RTX 4060 Ti
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 8
+  release_date: '2023-05-24'
+  specs:
+    cuda_cores: 4352
+    fp32_tflops: 22.06
+    max_power_watt: 160
+    memory_bandwidth_gbps: 288
+    memory_interface_bit: 128
+    rt_cores: 34
+    tdp_watt: 160
+    tensor_cores: 136
+- slug: rtx4070
+  name: RTX 4070
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 12
+  release_date: '2023-04-13'
+  specs:
+    cuda_cores: 5888
+    fp32_tflops: 29.15
+    max_power_watt: 200
+    memory_bandwidth_gbps: 504
+    memory_interface_bit: 192
+    rt_cores: 46
+    tdp_watt: 200
+    tensor_cores: 184
+- slug: rtx4070super
+  name: RTX 4070 SUPER
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 12
+  release_date: '2024-01-17'
+  specs:
+    cuda_cores: 7168
+    fp32_tflops: 35.48
+    max_power_watt: 220
+    memory_bandwidth_gbps: 504
+    memory_interface_bit: 192
+    rt_cores: 56
+    tdp_watt: 220
+    tensor_cores: 224
+- slug: rtx4070ti
+  name: RTX 4070 Ti
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 12
+  release_date: '2023-01-05'
+  specs:
+    cuda_cores: 7680
+    fp32_tflops: 40.09
+    max_power_watt: 285
+    memory_bandwidth_gbps: 504
+    memory_interface_bit: 192
+    rt_cores: 60
+    tdp_watt: 285
+    tensor_cores: 240
+- slug: rtx4070tisuper
+  name: RTX 4070 Ti SUPER
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 16
+  release_date: '2024-01-24'
+  specs:
+    cuda_cores: 8448
+    fp32_tflops: 44.1
+    max_power_watt: 285
+    memory_bandwidth_gbps: 672
+    memory_interface_bit: 256
+    rt_cores: 66
+    tdp_watt: 285
+    tensor_cores: 264
+- slug: rtx4080
+  name: RTX 4080
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 16
+  release_date: '2022-11-20'
+  specs:
+    cuda_cores: 9728
+    fp32_tflops: 48.83
+    fp64_tflops: 0.76
+    manufacturing_process_nm: 5
+    max_power_watt: 320
+    memory_bandwidth_gbps: 717
+    memory_interface_bit: 256
+    rt_cores: 76
+    tdp_watt: 320
+    tensor_cores: 304
+- slug: rtx4080super
+  name: RTX 4080 SUPER
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 16
+  release_date: '2024-01-31'
+  specs:
+    cuda_cores: 10240
+    fp32_tflops: 52.22
+    max_power_watt: 320
+    memory_bandwidth_gbps: 736
+    memory_interface_bit: 256
+    rt_cores: 80
+    tdp_watt: 320
+    tensor_cores: 320
+- slug: rtx4090
+  name: RTX 4090
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 24
+  release_date: '2022-10-12'
+  specs:
+    cuda_cores: 16384
+    fp32_tflops: 82.6
+    fp64_tflops: 1.29
+    manufacturing_process_nm: 5
+    max_power_watt: 450
+    memory_bandwidth_gbps: 1008
+    memory_interface_bit: 384
+    rt_cores: 128
+    tdp_watt: 450
+    tensor_cores: 512
+- slug: rtx4500ada
+  name: RTX 4500 Ada
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 24
+  release_date: '2023-08-08'
+  specs:
+    cuda_cores: 7680
+    fp32_tflops: 39.63
+    max_power_watt: 210
+    memory_bandwidth_gbps: 432
+    rt_cores: 60
+    tdp_watt: 210
+    tensor_cores: 240
+- slug: rtx5000ada
+  name: RTX 5000
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 32
+  release_date: '2023-08-08'
+  specs:
+    cuda_cores: 12800
+    fp32_tflops: 65.28
+    max_power_watt: 250
+    memory_bandwidth_gbps: 576
+    rt_cores: 100
+    tdp_watt: 250
+    tensor_cores: 400
+- slug: rtx5060
+  name: RTX 5060
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 12
+  release_date: null
+  specs: {}
+- slug: rtx5060ti
+  name: RTX 5060 Ti
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 16
+  release_date: null
+  specs: {}
+- slug: rtx5070
+  name: RTX 5070
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 12
+  release_date: null
+  specs: {}
+- slug: rtx5070ti
+  name: RTX 5070 Ti
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 16
+  release_date: null
+  specs: {}
+- slug: rtx5080
+  name: RTX 5080
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 16
+  release_date: null
+  specs: {}
+- slug: rtx5090
+  name: RTX 5090
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 32
+  release_date: null
+  specs: {}
+- slug: rtx6000ada
+  name: RTX 6000 Ada
+  manufacturer: NVIDIA
+  architecture: Ada Lovelace
+  vram_gb: 48
+  release_date: '2022-01-01'
+  specs:
+    cuda_cores: 18176
+    fp16_tflops: 728.5
+    fp32_tflops: 91.1
+    fp64_tflops: 1.42
+    int8_tops: 728.5
+    manufacturing_process_nm: 4
+    max_power_watt: 300
+    memory_bandwidth_gbps: 960
+    memory_interface_bit: 384
+    rt_cores: 142
+    tdp_watt: 300
+    tensor_cores: 568
+- slug: rtx-6000-pro
+  name: RTX 6000 Pro
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 96
+  release_date: null
+  specs: {}
+- slug: rtxa2000
+  name: RTX A2000
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 6
+  release_date: '2021-08-10'
+  specs:
+    cuda_cores: 3328
+    fp32_tflops: 7.99
+    manufacturing_process_nm: 6
+    max_power_watt: 70
+    memory_bandwidth_gbps: 288
+    memory_interface_bit: 192
+    rt_cores: 26
+    tdp_watt: 70
+    tensor_cores: 104
+- slug: rtxa4000
+  name: RTX A4000
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 16
+  release_date: '2021-08-15'
+  specs:
+    cuda_cores: 6144
+    fp16_tflops: 76.7
+    fp32_tflops: 19.2
+    fp64_tflops: 0.3
+    int8_tops: 153.4
+    manufacturing_process_nm: 8
+    max_power_watt: 140
+    memory_bandwidth_gbps: 448
+    memory_interface_bit: 256
+    rt_cores: 48
+    tdp_watt: 140
+    tensor_cores: 192
+- slug: rtxa4500
+  name: RTX A4500
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 20
+  release_date: null
+  specs: {}
+- slug: rtxa5000
+  name: RTX A5000
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 24
+  release_date: '2021-04-12'
+  specs:
+    cuda_cores: 8192
+    fp16_tflops: 111.1
+    fp32_tflops: 27.8
+    fp64_tflops: 0.43
+    int8_tops: 222.2
+    manufacturing_process_nm: 8
+    max_power_watt: 230
+    memory_bandwidth_gbps: 768
+    memory_interface_bit: 384
+    rt_cores: 64
+    tdp_watt: 230
+    tensor_cores: 256
+- slug: rtxa6000
+  name: RTX A6000
+  manufacturer: NVIDIA
+  architecture: Ampere
+  vram_gb: 48
+  release_date: '2020-01-01'
+  specs:
+    cuda_cores: 10752
+    fp16_tflops: 154.85
+    fp32_tflops: 38.7
+    fp64_tflops: 0.6
+    int8_tops: 309.7
+    manufacturing_process_nm: 8
+    max_power_watt: 300
+    memory_bandwidth_gbps: 768
+    memory_interface_bit: 384
+    rt_cores: 84
+    tdp_watt: 300
+    tensor_cores: 336
+- slug: rtx-pro-6000
+  name: RTX PRO 6000
+  manufacturer: NVIDIA
+  architecture: Blackwell
+  vram_gb: 96
+  release_date: null
+  specs: {}
+- slug: t4
+  name: Tesla T4
+  manufacturer: NVIDIA
+  architecture: Turing
+  vram_gb: 16
+  release_date: '2018-09-13'
+  specs:
+    cuda_cores: 2560
+    fp16_tflops: 65
+    fp32_tflops: 8.1
+    fp64_tflops: 0.25
+    int8_tops: 130
+    manufacturing_process_nm: 12
+    max_power_watt: 70
+    memory_bandwidth_gbps: 320
+    memory_interface_bit: 256
+    rt_cores: 40
+    tdp_watt: 70
+    tensor_cores: 320
+- slug: v100
+  name: Tesla V100
+  manufacturer: NVIDIA
+  architecture: Volta
+  vram_gb: 32
+  release_date: '2017-01-01'
+  specs:
+    cuda_cores: 5120
+    fp16_tflops: 112
+    fp32_tflops: 14
+    fp64_tflops: 7
+    manufacturing_process_nm: 12
+    max_power_watt: 250
+    memory_bandwidth_gbps: 900
+    memory_interface_bit: 4096
+    tdp_watt: 250
+    tensor_cores: 640

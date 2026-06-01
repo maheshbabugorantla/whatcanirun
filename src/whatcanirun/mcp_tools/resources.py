@@ -193,7 +193,6 @@ async def render_current_cost_cells() -> bytes:
         gpu_catalog=deps.gpu_catalog,
         model_catalog=deps.model_catalog,
         quantizations=deps.quantizations,
-        bench_cells=deps.bench_cells,
         aa_observations=None,
     )
 

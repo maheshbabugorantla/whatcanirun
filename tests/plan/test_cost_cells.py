@@ -300,7 +300,14 @@ def test_query_with_no_filters_returns_full_join() -> None:
 
 
 def _anchor(tps: float = 35.0) -> BenchmarkCell:
-    return BenchmarkCell(
+    """Deterministic TPS-pinner for cost-math tests. Post-M10-
+    deferral, Tier 1b public_benchmark_anchor was removed from
+    the estimator ladder; this helper now constructs a v2-ready
+    own_measured cell via model_construct (which bypasses the
+    Pydantic validator that rejects own_measured at row
+    construction). Exercises the Tier 1a code path that v2's M17
+    GuideLLM cells will populate."""
+    return BenchmarkCell.model_construct(
         gpu_slug="h100",
         model_slug="llama-3-3-70b",
         quant_slug="fp8",
@@ -313,8 +320,8 @@ def _anchor(tps: float = 35.0) -> BenchmarkCell:
         engine="vllm",
         engine_version="0.6.x",
         measured_at=date(2026, 3, 15),
-        source="public_benchmark_anchor",
-        source_url="https://example.com/anchor",
+        source="own_measured",
+        source_url="https://internal/run-anchor",
         notes="Single H100 SXM, FP8, batch=1, ctx=4096.",
     )
 
@@ -373,7 +380,13 @@ def test_self_hosted_cost_math_matches_spec_worked_example() -> None:
              = 0.001388... * 10000 = 13.888...
     """
     small_model = _model(slug="llama-3-1-8b", total_params_b=7.0)
-    anchor = BenchmarkCell(
+    # Pin tps=100 via Tier 1a (own_measured). Tier 1b
+    # public_benchmark_anchor was removed with the M10 deferral;
+    # own_measured is the only remaining deterministic TPS-pinner
+    # at this layer. model_construct bypasses the BenchmarkCell
+    # validator that rejects own_measured at row construction
+    # (v2's M17 unlock is to flip that validator off).
+    anchor = BenchmarkCell.model_construct(
         gpu_slug="h100",
         model_slug="llama-3-1-8b",
         quant_slug="fp8",
@@ -386,8 +399,8 @@ def test_self_hosted_cost_math_matches_spec_worked_example() -> None:
         engine="vllm",
         engine_version="0.6.x",
         measured_at=date(2026, 3, 15),
-        source="public_benchmark_anchor",
-        source_url="https://example.com/anchor",
+        source="own_measured",
+        source_url="https://internal/run-cost-math-test",
         notes="",
     )
     cells = query_cost_cells(
@@ -396,9 +409,9 @@ def test_self_hosted_cost_math_matches_spec_worked_example() -> None:
         gpu_catalog=[_gpu()],
         model_catalog=[small_model],
         quantizations=[_quant()],
-        bench_cells=[anchor],
         aa_observations=None,
         filters=_filters(only_fits=False, batch_size=1, context_length=4096),
+        bench_cells=[anchor],
     )
     h100_fp8 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
     assert h100_fp8.fit_result is not None and h100_fp8.fit_result.fits is True
@@ -609,15 +622,18 @@ def test_envelope_cites_huggingface_when_fit_check_used_model_data() -> None:
 
 
 def test_benchmark_source_last_updated_uses_measured_at_not_price_freshness() -> None:
-    """Copilot review (round 2): the Tier 1b public_benchmark_anchor
-    Source's `last_updated` was set to `price.last_updated`
+    """Copilot review (round 2) — pivoted to Tier 1a after M10
+    deferral removed Tier 1b: the anchor-tier Source's
+    `last_updated` was being set to `price.last_updated`
     (ComputePrices freshness), which is unrelated to when the
     benchmark itself was measured. Per the trust contract,
     Source.last_updated should reflect the benchmark's own
     freshness (BenchmarkCell.measured_at) so consumers reading
-    `sources[].last_updated` see the right timestamp."""
+    `sources[].last_updated` see the right timestamp. Exercises
+    the own_measured branch since Tier 1b public_benchmark_anchor
+    is gone."""
     anchor_measured = date(2025, 11, 1)
-    anchor = BenchmarkCell(
+    anchor = BenchmarkCell.model_construct(
         gpu_slug="h100",
         model_slug="llama-3-3-70b",
         quant_slug="fp8",
@@ -630,8 +646,8 @@ def test_benchmark_source_last_updated_uses_measured_at_not_price_freshness() ->
         engine="vllm",
         engine_version="0.6.x",
         measured_at=anchor_measured,
-        source="public_benchmark_anchor",
-        source_url="https://example.com/anchor",
+        source="own_measured",
+        source_url="https://internal/run-1",
         notes="",
     )
     price_freshness = datetime(2026, 5, 28, tzinfo=dt.UTC)
@@ -645,13 +661,13 @@ def test_benchmark_source_last_updated_uses_measured_at_not_price_freshness() ->
         gpu_catalog=[_gpu()],
         model_catalog=[_model()],
         quantizations=[_quant()],
-        bench_cells=[anchor],
         aa_observations=None,
         filters=_filters(batch_size=1, context_length=4096),
+        bench_cells=[anchor],
     )
     h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
-    anchor_sources = [s for s in h100.trust_envelope.sources if s.name == "public_benchmark_anchor"]
-    assert anchor_sources, "public_benchmark_anchor Source missing"
+    anchor_sources = [s for s in h100.trust_envelope.sources if s.name == "own_measured_benchmark"]
+    assert anchor_sources, "own_measured_benchmark Source missing"
     # Source.last_updated should be the anchor's measured_at, not
     # the price row's last_updated.
     assert anchor_sources[0].last_updated.date() == anchor_measured
@@ -814,21 +830,23 @@ def test_envelope_lists_source_matching_tps_provenance_bandwidth() -> None:
 
 
 def test_envelope_verify_links_includes_tps_source_url_when_present() -> None:
-    """Tier 1a/1b populate `TpsEstimate.source_url`. The envelope
+    """Tier 1a populates `TpsEstimate.source_url`. The envelope
     must include it in verify_links so the LLM client can show
-    the user where the anchor came from."""
+    the user where the anchor came from. Pivoted from Tier 1b to
+    Tier 1a after the M10 deferral (_anchor() now produces an
+    own_measured cell)."""
     cells = query_cost_cells(
         gpu_prices=[_gpu_price()],
         llm_prices=[],
         gpu_catalog=[_gpu()],
         model_catalog=[_model()],
         quantizations=[_quant()],
-        bench_cells=[_anchor()],  # Tier 1b — populates source_url
         aa_observations=None,
         filters=_filters(batch_size=1, context_length=4096),
+        bench_cells=[_anchor()],  # Tier 1a own_measured — populates source_url
     )
     h100 = next(c for c in cells if c.gpu_slug == "h100" and c.quant_slug == "fp8")
-    assert h100.tps_estimate.source == "public_benchmark_anchor"
+    assert h100.tps_estimate.source == "own_measured"
     assert h100.tps_estimate.source_url is not None
     assert h100.tps_estimate.source_url in h100.trust_envelope.verify_links
 
@@ -982,7 +1000,27 @@ def test_anchor_last_updated_filters_on_tier_source() -> None:
     simulate the v2 row without triggering the guard."""
     from whatcanirun.plan.cost_cells import _anchor_last_updated
 
-    public_anchor = _anchor()  # source=public_benchmark_anchor, measured_at=2026-03-15
+    # _anchor() now returns own_measured (M10 deferral); construct
+    # both cells explicitly here so this test continues to exercise
+    # the cross-tier filtering contract: ONE own_measured + ONE
+    # public_benchmark_anchor at the same op-point.
+    public_anchor = BenchmarkCell.model_construct(
+        gpu_slug="h100",
+        model_slug="llama-3-3-70b",
+        quant_slug="fp8",
+        tp_size=1,
+        batch_size=1,
+        context_length=4096,
+        decode_tps=35.0,
+        prefill_tps=None,
+        ttft_ms=None,
+        engine="vllm",
+        engine_version="0.6.x",
+        measured_at=date(2026, 3, 15),
+        source="public_benchmark_anchor",
+        source_url="https://example.com/public",
+        notes="v2 forward-compat fixture for the public-anchor tier.",
+    )
     own_anchor = BenchmarkCell.model_construct(
         gpu_slug="h100",
         model_slug="llama-3-3-70b",
@@ -1042,7 +1080,26 @@ def test_anchor_last_updated_falls_back_when_no_matching_tier_cell() -> None:
     cross-tier."""
     from whatcanirun.plan.cost_cells import _anchor_last_updated
 
-    public_anchor = _anchor()
+    # Build a public_benchmark_anchor cell explicitly (the _anchor()
+    # helper post-M10-deferral returns own_measured, which would
+    # match the Tier 1a lookup below and defeat the fallback test).
+    public_anchor = BenchmarkCell.model_construct(
+        gpu_slug="h100",
+        model_slug="llama-3-3-70b",
+        quant_slug="fp8",
+        tp_size=1,
+        batch_size=1,
+        context_length=4096,
+        decode_tps=35.0,
+        prefill_tps=None,
+        ttft_ms=None,
+        engine="vllm",
+        engine_version="0.6.x",
+        measured_at=date(2026, 3, 15),
+        source="public_benchmark_anchor",
+        source_url="https://example.com/public",
+        notes="v2 forward-compat fixture.",
+    )
     fallback = datetime(2026, 5, 28, tzinfo=dt.UTC)
     # No own_measured cells in bench_cells — Tier 1a lookup should
     # fall back, not return the public_benchmark_anchor's

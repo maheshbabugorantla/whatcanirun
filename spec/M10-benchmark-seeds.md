@@ -1,12 +1,66 @@
 # M10 — Benchmark Seeds (Public Sources)
 
-**Status:** ⬜ Not started
-**Effort:** 6h
+**Status:** ✓ Partially shipped — verification tooling landed (PR #17, `33ce718`); Tier 1b cell curation **deferred to v2 M17** (PR #19, `<this-pr>`).
+**Effort:** 6h estimated, ~7h actual on the verification tooling alone.
 **Dependencies:** M00
-**Unblocks:** M07 Tier 1b, M09 (find_cheapest_deployment quality)
+**Unblocks (revised):** v2 M17 GuideLLM-measured cells will reuse PR #17's V1 sanity-check tool + V2 merge tool + `seeds/benchmark_cells.sources/` archive convention.
 **Parallel-safe:** yes
 
 > Read [`SHARED.md`](SHARED.md) first. ADR-006 is load-bearing.
+
+---
+
+## Deferral preamble (2026-05-31)
+
+The Tier 1b cell-curation work this spec describes proved infeasible for v1.
+Three independent reasons emerged during PR-β scoping:
+
+1. **Public benchmark sources don't publish the data shape `BenchmarkCell` expects.**
+   The schema below wants steady-state per-stream decode-TPS at a specific
+   `(gpu, model, quant, tp, batch, ctx)` op-point. Public benchmark blogs
+   instead publish aggregate-throughput-at-concurrency numbers (e.g.
+   "2,400 tok/s across 100 concurrent requests on H100 SXM5") and
+   commonly conflate prefill into the per-token figure. Extracting our
+   shape requires per-stream isolation work the source authors didn't do.
+
+2. **Source URLs rot faster than the spec assumed.** The spec's named
+   Spheron H100/H200 article 404s as of 2026-05-30. The replacement
+   article from the same publisher reports single-stream numbers
+   (120 tok/s for Llama-3.3-70B FP8 on H100 SXM5) that are ~3.4×
+   above the bandwidth-physics ceiling — likely prefill-amortized
+   measurements, but unauditable as steady-state decode.
+
+3. **Even paid first-principles sources don't anchor cells.** The
+   *Inference Engineering* book by Kiely (2026), explicitly named in
+   the spec source list, is a textbook that **teaches** the
+   bandwidth-heuristic methodology we already implement (`KERNEL_EFFICIENCY_SINGLE_STREAM = 0.75` from §2.4.2) and publishes GPU spec
+   tables we already cross-check against ComputePrices. It does not
+   publish per-cell TPS measurements.
+
+What landed regardless:
+
+- **`seeds/gpu_catalog_snapshot.yaml`** — 66 GPU rows projected from
+  ComputePrices, cross-validated against Kiely 2026 §3.2 tables.
+  Useful for V1 sanity-check determinism + any future cell additions.
+- **`scripts/m10/sanity_check_cells.py` (V1) + `merge_candidate_to_parquet.py` (V2)**
+  — 11 sanity-check functions + atomic merge tool. Reusable for v2's
+  `own_measured` cells.
+- **`seeds/benchmark_cells.sources/`** archive convention + README.
+- **`@pytest.mark.network`** URL accessibility test (Slice C).
+- **`BenchmarkCell` schema** unchanged. **`Source` Literal**
+  retains `public_benchmark_anchor` — v2 may revive Tier 1b.
+
+What v1 ships with instead:
+
+- Tier 2 (AA `provider_anchor`, confidence 0.7) for models AA tracks.
+- Tier 3 (`bandwidth_heuristic`, confidence 0.6) for everything else.
+- The trust contract is preserved: confidence is honestly reported
+  at the lower tier rather than fabricated at 0.80.
+
+The rest of this spec is **archived as historical context** — its
+"20–30 cells from public sources" goal is no longer the active v1
+target. v2's M17 will replace this work with GuideLLM-measured cells
+that own_measured cells (Tier 1a, confidence 0.95) will populate.
 
 ---
 

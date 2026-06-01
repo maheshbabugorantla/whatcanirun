@@ -1,15 +1,17 @@
-"""M07 `estimate_tps` — 5-tier throughput provenance.
+"""M07 `estimate_tps` — 4-tier throughput provenance.
 
 Pure function with explicit confidence values per tier:
-  Tier 1a own_measured            confidence=0.95   (v2 only)
-  Tier 1b public_benchmark_anchor confidence=0.80   (v1 default)
+  Tier 1a own_measured            confidence=0.95   (v2 only — bench_cells defaults to [])
   Tier 2  provider_anchor (AA)    confidence=0.7
   Tier 3  bandwidth_heuristic     confidence=0.6    (single-stream)
   Tier 4  requires_measurement    confidence=0.0    (refusal)
 
-Tier ordering: lower number wins. Same `bench_cells` table serves
-1a and 1b (different `source` field). Reasoning models require
-AA-row effort match.
+Tier 1b (public_benchmark_anchor at confidence=0.80) was removed
+with the M10 deferral (2026-05-31). The bench_cells parameter
+still exists at the estimator boundary so v2's M17
+GuideLLM-measured cells can revive Tier 1a; v1 callers omit it
+and the loop is a no-op. Reasoning models require AA-row effort
+match.
 
 Test fixtures use synthetic Model / GpuCatalogRow / Quantization
 instances per the M06 pattern — `estimate_tps` is pure so it
@@ -120,9 +122,15 @@ def _anchor(
     batch: int = 1,
     ctx: int = 4096,
     tps: float = 35.2,
-    source: str = "public_benchmark_anchor",
+    source: str = "own_measured",
 ) -> BenchmarkCell:
-    return BenchmarkCell(
+    """v2-ready bench-cell fixture. Post-M10-deferral the only
+    tier that still consumes bench_cells in the estimator is
+    Tier 1a (own_measured), so the helper defaults to that source.
+    Constructed via model_construct because v1's BenchmarkCell
+    validator rejects source='own_measured' at row construction
+    (v2's M17 unlock is to flip that validator off)."""
+    return BenchmarkCell.model_construct(
         gpu_slug=gpu,
         model_slug=model,
         quant_slug=quant,
@@ -136,7 +144,7 @@ def _anchor(
         engine_version="0.6.x",
         measured_at=date(2026, 3, 15),
         source=source,  # type: ignore[arg-type]
-        source_url="https://www.spheron.network/blog/llama-3-3-70b-fp8",
+        source_url="https://internal/run-anchor",
         notes="Single H100 SXM, FP8 quantization, batch=1, ctx=4096.",
     )
 
@@ -201,46 +209,10 @@ def test_tier1a_own_measured_wins_at_confidence_095() -> None:
 
 
 # ============================================================ Slice 2
-# Tier 1b public_benchmark_anchor — v1's default tier.
-
-
-def test_tier1b_public_anchor_wins_at_confidence_080() -> None:
-    """Spec slice 2: exact-match row with
-    `source="public_benchmark_anchor"` returns at confidence=0.80
-    with `source_url` populated for audit."""
-    result = estimate_tps(
-        model=_model(),
-        gpu=_h100(),
-        quant=_fp8(),
-        batch_size=1,
-        context_length=4096,
-        bench_cells=[_anchor(tps=35.2)],
-        aa_observations=None,
-    )
-    assert result.value == 35.2
-    assert result.source == "public_benchmark_anchor"
-    assert result.confidence == 0.80
-    assert result.source_url is not None
-    assert "spheron" in result.source_url.lower()
-
-
-def test_tier1b_no_match_falls_through() -> None:
-    """A bench_cells list with rows that DON'T match the query is
-    equivalent to an empty list — the lookup falls through to
-    Tier 2 or below."""
-    wrong_gpu = _anchor(gpu="l40s")
-    result = estimate_tps(
-        model=_model(),
-        gpu=_h100(),
-        quant=_fp8(),
-        batch_size=1,
-        context_length=4096,
-        bench_cells=[wrong_gpu],
-        aa_observations=[_aa_row("llama-3-3-instruct-70b", tps=89.6)],
-    )
-    # Falls through to Tier 2 (AA). Slug fixtures pin this to the
-    # actual Llama AA slug discovered in M04.
-    assert result.source == "provider_anchor"
+# Tier 1b public_benchmark_anchor — REMOVED with M10 deferral
+# (2026-05-31). Tests for the public-anchor tier deleted; the
+# v2-ready Tier 1a code path is exercised by the tier-ordering
+# tests in Slice 6 + the parametrize in Slice 8.
 
 
 # ============================================================ Slice 3
@@ -396,9 +368,15 @@ def test_tier4_batch_gt_1_no_anchor_refuses_honestly() -> None:
 # Tier ordering.
 
 
-def test_tier_ordering_1a_beats_1b() -> None:
-    """When both Tier 1a (own_measured) and Tier 1b
-    (public_benchmark_anchor) match, 1a wins."""
+def test_tier_ordering_1a_beats_2() -> None:
+    """When both Tier 1a (own_measured, v2-only) and Tier 2 (AA)
+    match, 1a wins. Pins the v2-ready dead-code path: if a future
+    caller passes own_measured bench_cells alongside AA rows, the
+    own_measured anchor takes precedence over the provider
+    aggregate.
+
+    (Tier 1b public_benchmark_anchor was removed with the M10
+    deferral, so the original 1a-beats-1b test is gone too.)"""
     measured = BenchmarkCell.model_construct(
         gpu_slug="h100",
         model_slug="llama-3-3-70b",
@@ -406,7 +384,7 @@ def test_tier_ordering_1a_beats_1b() -> None:
         tp_size=1,
         batch_size=1,
         context_length=4096,
-        decode_tps=40.5,  # own_measured
+        decode_tps=40.5,
         prefill_tps=None,
         ttft_ms=None,
         engine="vllm",
@@ -416,35 +394,17 @@ def test_tier_ordering_1a_beats_1b() -> None:
         source_url="https://internal/run-42",
         notes="(v2 simulated)",
     )
-    anchor = _anchor(tps=35.2)  # public_benchmark_anchor
     result = estimate_tps(
         model=_model(),
         gpu=_h100(),
         quant=_fp8(),
         batch_size=1,
         context_length=4096,
-        bench_cells=[anchor, measured],  # order shouldn't matter
-        aa_observations=None,
+        bench_cells=[measured],
+        aa_observations=[_aa_row("llama-3-3-instruct-70b", tps=89.6)],
     )
     assert result.value == 40.5  # own_measured wins
     assert result.source == "own_measured"
-
-
-def test_tier_ordering_1b_beats_2() -> None:
-    """When Tier 1b (public_benchmark_anchor) and Tier 2 (AA)
-    both match, 1b wins — we trust an anchor specific to (gpu,
-    model, quant, batch, ctx) over an aggregate AA observation."""
-    result = estimate_tps(
-        model=_model(),
-        gpu=_h100(),
-        quant=_fp8(),
-        batch_size=1,
-        context_length=4096,
-        bench_cells=[_anchor(tps=35.2)],
-        aa_observations=[_aa_row("llama-3-3-instruct-70b", tps=89.6)],
-    )
-    assert result.value == 35.2  # 1b wins
-    assert result.source == "public_benchmark_anchor"
 
 
 # ============================================================ Slice 7
@@ -556,17 +516,17 @@ def test_tier2_matches_when_no_reasoning_effort_requested_and_aa_row_has_none() 
     ("source", "expected_confidence"),
     [
         ("own_measured", 0.95),
-        ("public_benchmark_anchor", 0.80),
+        # public_benchmark_anchor removed with M10 deferral.
         ("provider_anchor", 0.7),
         ("bandwidth_heuristic_single_stream", 0.6),
         ("requires_measurement", 0.0),
     ],
 )
 def test_confidence_values_are_exact_no_fudge(source: str, expected_confidence: float) -> None:
-    """Spec acceptance criterion: confidence values 0.95 / 0.80
-    / 0.7 / 0.6 / 0.0 — exact, no fudge factors. Pin via a
-    parametrize so a drive-by edit can't quietly raise tier-2
-    to 0.75 (or whatever)."""
+    """Spec acceptance criterion: confidence values 0.95 / 0.7 /
+    0.6 / 0.0 — exact, no fudge factors. Pin via a parametrize so
+    a drive-by edit can't quietly raise tier-2 to 0.75 (or whatever).
+    Public-anchor 0.80 was removed with the M10 deferral."""
     # Build the minimum inputs to exercise each tier.
     if source == "own_measured":
         cells = [
@@ -588,9 +548,6 @@ def test_confidence_values_are_exact_no_fudge(source: str, expected_confidence: 
                 notes="",
             )
         ]
-        aa = None
-    elif source == "public_benchmark_anchor":
-        cells = [_anchor(tps=35.2)]
         aa = None
     elif source == "provider_anchor":
         cells = []

@@ -26,3 +26,21 @@ TrustEnvelope(
 ```
 
 The trust contract is the product. Everything else is plumbing.
+
+## Methodology citations
+
+The TPS-estimator's Tier 3 bandwidth heuristic
+(`KERNEL_EFFICIENCY_SINGLE_STREAM = 0.75`, applied as
+`predicted_tps = bandwidth_gbps / weights_bytes_per_token * 0.75`)
+follows Kiely 2026, *Inference Engineering*, §2.4.2 "LLM Inference
+Bottlenecks." The book teaches the arithmetic-intensity analysis we
+use to argue that LLM decode is memory-bound at low-to-medium batch
+sizes, which is the load-bearing assumption for Tier 3's
+single-stream estimates.
+
+Recommended reading for understanding the heuristic + the GPU-spec
+tables ComputePrices reports:
+
+- Kiely, Philip. *Inference Engineering.* 2026.
+  Specifically §2.4 (Calculating Inference Bottlenecks) and
+  §3.2 (GPU Architecture Generations).
