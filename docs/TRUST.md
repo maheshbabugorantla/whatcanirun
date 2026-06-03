@@ -149,21 +149,37 @@ introspect every source individually.
 
 ### `workload_assumption` *(conditional)*
 
-Only populated by tools that synthesize a derived prompt count
-from a workload profile — `budget_to_plan`'s `est_total_prompts`,
-`est_wallclock_minutes`. Omit the key entirely on responses
-that don't synthesize a workload-dependent number (e.g.
-`find_cheapest_deployment`).
+Populated by every numerical tool whose output is workload-derived:
 
-Calibration:
+- `budget_to_plan`'s `est_total_prompts` +
+  `est_wallclock_minutes`
+- `compare_deployment_modes`'s per-prompt cost comparison
+  (`build_deployment_comparison_envelope` populates the key
+  because the verdict depends on token counts)
 
-- User explicitly supplied custom `avg_input_tokens` +
-  `avg_output_tokens`: **1.0**
-- User elicited a `workload_profile_slug` or the client passed
-  one as a tool argument: **0.95**
-- Server fell back to a silent default profile: **0.2** —
-  intentionally low so the `min(...)` rollup forces the LLM
-  client to relay that the prompt count is hearsay
+Omitted on tools whose output does not depend on a workload —
+`fit_check` (pure VRAM math), `find_cheapest_deployment` (ranks
+on `cost_per_m_output_usd`, not per-prompt arithmetic).
+
+Calibration on the v1 surface:
+
+- **0.95** — the only path callers can hit in v1. Triggered when
+  the LLM client passes a `workload_profile_slug` (or the user
+  named one through elicitation). Both tools above take
+  `workload_profile_slug` as their workload input.
+
+Two lower-confidence tiers exist in the design but are not
+reachable on the v1 wire surface:
+
+- **1.0** — caller passes raw `avg_input_tokens` +
+  `avg_output_tokens`. Not exposed in v1 MCP tool signatures;
+  reserved for v2 when the tools may grow a `workload_override`
+  parameter.
+- **0.2** — server silently defaults a profile. Not reachable in
+  v1: `budget_to_plan` returns a `WorkloadElicitationResponse`
+  when `workload_profile_slug` is omitted (it elicits rather
+  than guessing), and `compare_deployment_modes` requires the
+  slug as a positional argument.
 
 ---
 

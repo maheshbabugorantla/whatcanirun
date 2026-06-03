@@ -216,11 +216,28 @@ Claude Desktop. Put the keys in the JSON.
 
 ### Stale data after a long-running session
 
-The server caches upstream catalog and pricing reads for the
-freshness window declared in
-[`docs/TRUST.md`](TRUST.md#freshness-policy).
-Restart the client to force a fresh fetch — there's no hot-reload
-API in v1.
+The server caches upstream catalog and pricing reads as TTL-based
+files on disk. **Restarting the client does NOT force a refetch**
+— the new server process reads the same on-disk caches and finds
+them still within TTL. Per-endpoint TTLs follow the upstream
+refresh cadences described in
+[`docs/TRUST.md`](TRUST.md#freshness-policy)
+(prices refresh hourly; catalogs change rarely).
+
+Two ways to force a fresh fetch:
+
+1. **Wait for TTL expiry** — for pricing, that's roughly an hour
+   from the cached timestamp.
+2. **Delete the on-disk cache** — caches live under
+   `$XDG_CACHE_HOME/whatcanirun` (defaults to
+   `~/.cache/whatcanirun` on Linux/macOS), with per-source
+   subdirectories: `computeprices/`, `artificial_analysis/`,
+   `huggingface/`. Remove a single cache file (e.g.
+   `computeprices/gpus.latest.json`), a source subdirectory, or
+   the whole `whatcanirun/` directory; the next tool call
+   repopulates from upstream.
+
+There's no hot-reload tool surface in v1.
 
 ---
 

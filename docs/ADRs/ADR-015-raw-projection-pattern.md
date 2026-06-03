@@ -33,9 +33,25 @@ later care about.
 
 ## Consequences
 
-- Every upstream fetch writes a raw JSON payload to disk under
-  `cache/raw/{source}/{date}/{request_hash}.json` *before* the
-  projection runs.
+- Every upstream fetch writes the raw upstream bytes to disk
+  *before* the projection runs. Each client owns its layout under
+  the user cache directory (XDG `~/.cache/whatcanirun` by
+  default); the pattern is "latest" + "snapshots" rather than a
+  single fixed path. Current clients:
+  - ComputePrices:
+    `<cache_dir>/<endpoint>.latest.json` (raw bytes) plus rolling
+    snapshots in `<cache_dir>/<endpoint>.snapshots/`
+    (src/whatcanirun/pricing/computeprices.py).
+  - Artificial Analysis:
+    `<cache_dir>/artificial_analysis/models.latest.json` plus
+    gzipped snapshots in
+    `<cache_dir>/artificial_analysis/models.snapshots/<ISO-8601>.json.gz`
+    (src/whatcanirun/pricing/artificial_analysis/client.py).
+  - Hugging Face: per-revision projection cache keyed by
+    `(repo_id, revision_sha)`.
+  New clients should follow the same "raw bytes verbatim before
+  any narrowing" rule; the exact directory layout is the
+  client's call as long as the bytes survive on disk.
 - Projection models inherit a base config with
   `extra="ignore"`, so a new upstream field is invisible to the
   projection but preserved in the raw layer for forensic
