@@ -197,11 +197,15 @@ upgrades silently.
 | 4 | `requires_measurement` | 0.00 | None of the above applied. Server returns the cell with throughput = None and confidence = 0. |
 
 Tier 1b (`public_benchmark_anchor`, 0.80) was scoped for M10
-public-source seeds but **deferred to v2's M17** during the M10
+public-source seeds but **removed from v1** during the M10
 audit — public benchmark blogs do not publish per-stream
 steady-state decode-TPS in the shape our cell schema requires,
 and curated seeds rotted faster than we could maintain them.
-The validator still rejects `own_measured` rows in v1 so the
+Tier 1b is not tied to a specific v2 milestone; reviving it
+would need a separate decision and a fresh source landscape.
+v2's M17 is the unlock for **Tier 1a (`own_measured`)** via
+GuideLLM-measured cells, not Tier 1b. The `BenchmarkCell`
+validator still rejects `own_measured` rows in v1 so the
 ladder can't be silently raised.
 
 The 0.75 efficiency factor in Tier 3 follows Kiely 2026,
@@ -262,12 +266,23 @@ list, and consolidated in the `cost-cells://provenance` resource:
   pricing only.
 - **Hosted-API rate limits or per-key quota caps.**
 
-Hosted-API responses additionally **do not carry** the
-`fit_check`, `model_architecture`, or `gpu_specs` confidence
-domains — those domains don't apply to remote APIs where you
-don't see the underlying GPU. Hosted-API envelopes use exactly
-three domains: `pricing`, `throughput`, `freshness` (plus the
-conditional `workload_assumption`).
+Hosted-API responses split into two shapes:
+
+- **Tracked-model hosted rows** (the model is in the curated
+  tracked-models list) carry just `pricing`, `throughput`, and
+  `freshness` (plus the conditional `workload_assumption`).
+  `fit_check` and `gpu_specs` don't apply — you don't see the
+  underlying GPU — and the tracked-model path doesn't need to
+  disclose architecture confidence because the architecture is
+  cached.
+- **Case 2 partial-cell hosted rows** (model is in CP's catalog
+  but not in our tracked-models set; built by
+  `build_case_2_partial_cells`) additionally carry
+  `model_architecture = 0.0` and a corresponding caveat. The
+  zero value is *honest disclosure* — we have no architecture
+  data for the model, the weakest-link rollup pulls `confidence`
+  to 0.0, and the LLM client surfaces "I can show pricing but
+  not fit/throughput-arithmetic for this hosted model."
 
 ---
 

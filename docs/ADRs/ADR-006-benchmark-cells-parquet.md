@@ -1,19 +1,23 @@
 # ADR-006 — Benchmark cells published as Parquet on Hugging Face Datasets
 
-**Status:** Locked (v1 contribution deferred to M17/v2)
+**Status:** Locked. Tier 1b (`public_benchmark_anchor`) **removed
+from v1** in the M10 audit. v2's M17 is the unlock for Tier 1a
+(`own_measured`) via GuideLLM-measured cells — not Tier 1b.
 **Date:** 2026-05 (v2.1 lock-in); revised 2026-05-31
 
 ## Decision
 
 The benchmark-cell artifact ships as a Parquet file on Hugging Face
 Datasets under CC-BY-4.0. Schema is the `BenchmarkCell` Pydantic
-shape; consumers (including this server's `public_benchmark_anchor`
-TPS tier) read it directly.
+shape.
 
-In v1, the seed parquet is **empty** but schema-validated. Tier 1b
-public_benchmark_anchor cells were deferred to v2 (M17) after the
-M10 audit; see [`../../spec/M10-benchmark-seeds.md`](../../spec/M10-benchmark-seeds.md)
-deferral preamble.
+In v1, the seed parquet is **empty** but schema-validated and
+Tier 1b (`public_benchmark_anchor`) is removed from the
+estimator's tier ladder. The `BenchmarkCell` validator still
+rejects `own_measured` rows at construction so v1 cannot
+accidentally serve any benchmark-cell-derived throughput value.
+See [`../../spec/M10-benchmark-seeds.md`](../../spec/M10-benchmark-seeds.md)
+deferral preamble for the M10 audit findings.
 
 ## Context
 
@@ -32,8 +36,10 @@ discovered:
   measurements.
 
 v2's M17 introduces own-measured cells via GuideLLM runs, which
-both unblocks Tier 1b in the TPS provenance ladder and gives the
-dataset a defensible methodology.
+revives **Tier 1a (`own_measured`, confidence 0.95)** in the TPS
+provenance ladder and gives the dataset a defensible methodology.
+Tier 1b is not tied to M17 — reviving it would need a separate
+decision once a viable public-source landscape exists.
 
 ## Consequences
 

@@ -122,9 +122,13 @@ PRD:
 ### M10 partial-ship note
 
 M10's verification tooling and the GPU catalog snapshot landed,
-but Tier 1b public_benchmark_anchor cell curation was deferred to
-v2's M17. The public benchmark source landscape proved infeasible
-for the cell shape v1 required:
+but Tier 1b `public_benchmark_anchor` cell curation was removed
+from v1 — Tier 1b is not tied to a specific v2 milestone and
+reviving it would need a separate decision and a fresh source
+landscape. v2's M17 is the unlock for Tier 1a
+(`own_measured`) via GuideLLM-measured cells, not Tier 1b. The
+public benchmark source landscape proved infeasible for the
+cell shape v1 required:
 
 - Public benchmark blogs publish aggregate-throughput-at-concurrency,
   not per-stream steady-state decode-TPS.
