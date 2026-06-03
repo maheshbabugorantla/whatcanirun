@@ -25,16 +25,39 @@ return a number it can't source.
 
 ## TrustEnvelope shape
 
+Class definition (load-bearing: `extra="forbid"`,
+`confidence` is a Pydantic `@computed_field` over
+`confidence_breakdown` — not a settable field):
+
 ```python
 class TrustEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sources: list[Source]                                # which upstreams contributed
-    confidence: float                                    # min(confidence_breakdown.values())
     confidence_breakdown: dict[ConfidenceDomain, float]  # per-domain, weakest-link semantics
-    assumptions: dict[str, Any]                          # what was held fixed
-    caveats: list[str]                                   # what we explicitly do NOT model
-    freshness: dict[str, datetime]                       # per-source last-updated timestamps
-    verify_links: list[str]                              # URLs the user can audit upstream
+    assumptions: dict[str, Any] = Field(default_factory=dict)
+    caveats: list[str] = Field(default_factory=list)
+    freshness: dict[str, datetime] = Field(default_factory=dict)
+    verify_links: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def confidence(self) -> float:
+        """min(confidence_breakdown.values()) — never an average."""
+        return min(self.confidence_breakdown.values()) if self.confidence_breakdown else 0.0
 ```
+
+Serialized output every numerical response carries:
+
+| Field | Purpose |
+|---|---|
+| `sources` | Each upstream that contributed a number. |
+| `confidence` | Weakest-link rollup, derived at serialization time. |
+| `confidence_breakdown` | Per-domain confidence values. |
+| `assumptions` | What was held fixed. |
+| `caveats` | What we explicitly do NOT model. |
+| `freshness` | Per-source last-updated timestamps. |
+| `verify_links` | URLs the user can audit upstream. |
 
 Every numerical tool — `fit_check`, `find_cheapest_deployment`,
 `compare_deployment_modes`, `budget_to_plan` — returns rows that

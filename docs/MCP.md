@@ -35,10 +35,22 @@ All three keys are **optional**:
 | `HF_TOKEN` | Auth for private / gated Hugging Face configs. | Public-only reads (sufficient for every tracked model). |
 | `AA_API_KEY` | Enables Artificial Analysis enrichment (ADR-003). AA *is* the provider_anchor (Tier 2) throughput source. | Server runs without AA; throughput falls back to the bandwidth heuristic (Tier 3, batch=1 only) or `requires_measurement` (Tier 4) for cells the heuristic can't anchor. |
 
-Set them in `.env` next to the source checkout, or pass them through
-your client's `env:` block (examples below). Empty strings are
-treated as "unset" — a deliberate `AA_API_KEY=""` doesn't break the
-anonymous path.
+The server itself does not source a `.env` file — there is no
+`python-dotenv` in the install. Set the variables one of these
+ways:
+
+- **Client `env:` block** (recommended for Claude Desktop /
+  Cursor / Cline — GUI clients don't reliably inherit shell env).
+  See the per-client examples below.
+- **Shell export** (`export COMPUTEPRICES_API_KEY=...`) if you
+  launch the server from a shell whose environment you control
+  (e.g. Claude Code running in a terminal).
+- **`direnv`** in the source checkout if you prefer a `.env`-style
+  workflow — `direnv` exports into the shell, so `uvx`/`uv run`
+  picks the values up.
+
+Empty strings are treated as "unset" — a deliberate
+`AA_API_KEY=""` doesn't break the anonymous path.
 
 ---
 
@@ -171,11 +183,14 @@ Find the absolute path with `which uvx` in your shell.
 
 ### The stdio handshake times out
 
-The server emits its initial JSON-RPC `initialize` response within
-a few hundred milliseconds of process start on a warm cache. First
-run hits ComputePrices once to populate the snapshot, which takes
-1–3 seconds on a healthy network — within the default handshake
-window for every supported client, but visible as a one-shot delay.
+The MCP `initialize` handshake itself is fast — the server emits
+its response within a few hundred milliseconds of process start
+because no upstream is touched during startup. Upstream caches
+(ComputePrices, Hugging Face, AA) are lazy-loaded by
+`load_runtime_deps()` on the *first tool or resource call*. On a
+cold cache that first call adds 1–3 seconds on a healthy network
+— visible as a one-shot delay on the first invocation, not on
+handshake.
 
 If the handshake genuinely fails:
 
