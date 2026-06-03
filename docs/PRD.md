@@ -180,8 +180,9 @@ See [`MCP.md`](MCP.md) for per-client configuration blocks
 
 ## License
 
-MIT (TBD — see open decisions in
-[`spec/SHARED.md`](../spec/SHARED.md)).
+MIT — declared in `pyproject.toml`. The separate question of the
+benchmark *dataset* license (CC-BY-4.0 vs MIT vs CC0) is still
+open and tracked under v2 work; see ADR-006.
 
 ## References
 

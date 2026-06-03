@@ -33,7 +33,7 @@ All three keys are **optional**:
 |---|---|---|
 | `COMPUTEPRICES_API_KEY` | Lifts ComputePrices anonymous rate limits (5k/hr free with email-requested key). | Anonymous reads with lower quota; ADR-013 snapshot fallback covers rate-limit hits. |
 | `HF_TOKEN` | Auth for private / gated Hugging Face configs. | Public-only reads (sufficient for every tracked model). |
-| `AA_API_KEY` | Enables Artificial Analysis enrichment (ADR-003). | Server runs without AA; throughput falls back to bandwidth heuristic + provider anchors only. |
+| `AA_API_KEY` | Enables Artificial Analysis enrichment (ADR-003). AA *is* the provider_anchor (Tier 2) throughput source. | Server runs without AA; throughput falls back to the bandwidth heuristic (Tier 3, batch=1 only) or `requires_measurement` (Tier 4) for cells the heuristic can't anchor. |
 
 Set them in `.env` next to the source checkout, or pass them through
 your client's `env:` block (examples below). Empty strings are

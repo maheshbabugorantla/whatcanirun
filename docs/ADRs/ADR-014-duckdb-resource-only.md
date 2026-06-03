@@ -30,9 +30,13 @@ decisions away from Python (where the type system enforces them).
 
 ## Consequences
 
-- A grep-based AST test (`tests/architecture/`) asserts no
-  `duckdb` import in the tool-call modules under
-  `src/whatcanirun/mcp_tools/` or `src/whatcanirun/plan/`.
+- An AST-scanning unit test
+  (`tests/plan/test_no_sql_in_business_logic.py`) walks the
+  source of every tool-call-path function in
+  `src/whatcanirun/plan/cost_cells.py` (`query_cost_cells` and
+  its helpers) and asserts no `duckdb` import or SQL pattern
+  appears in their bodies. A future refactor that "just adds a
+  quick SQL join" into one of those functions goes red.
 - The Python join layer is what most contributors will edit;
   DuckDB stays in one place
   (`render_cost_cells_resource` in `plan/cost_cells.py`).

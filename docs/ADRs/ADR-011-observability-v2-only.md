@@ -24,8 +24,12 @@ tracing helps diagnose distributed problems.
 
 ## Consequences
 
-- v1 has no `logging` library boilerplate beyond `print` to
-  stderr.
+- v1 has no centralized observability target. The codebase uses
+  Python's `logging` module for diagnostics where useful
+  (`whatcanirun.catalog.hf_sync`,
+  `whatcanirun.pricing.artificial_analysis.client`), but those
+  logs go to stderr at default levels, captured by whatever the
+  MCP client routes the subprocess's stderr to.
 - Client-side logs (Claude Desktop, Claude Code) are the only v1
   trace surface; troubleshooting tips in
   [`../MCP.md`](../MCP.md) point users to the right file.

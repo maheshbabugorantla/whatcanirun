@@ -19,8 +19,9 @@ serving the project are:
 - `/api/v1/gpu-prices` — 71 providers' on-demand $/hr
 - `/api/v1/llm-models` — 214 hosted models with pricing tiers
 
-Verified live in May 2026. Hourly refresh, free 5k/hr anonymous,
-higher tier with an email-requested key.
+Verified live in May 2026. Hourly refresh. Anonymous tier is
+~60/hr per IP; the free 5k/hr tier is unlocked with an
+email-requested `COMPUTEPRICES_API_KEY`.
 
 ## Consequences
 
