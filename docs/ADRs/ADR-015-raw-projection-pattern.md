@@ -47,8 +47,15 @@ later care about.
     gzipped snapshots in
     `<cache_dir>/artificial_analysis/models.snapshots/<ISO-8601>.json.gz`
     (src/whatcanirun/pricing/artificial_analysis/client.py).
-  - Hugging Face: per-revision projection cache keyed by
-    `(repo_id, revision_sha)`.
+  - Hugging Face: slug-keyed cache under
+    `<cache_dir>/huggingface/` —
+    `{slug}.model.json` (projection),
+    `{slug}.config.json` (raw config bytes),
+    `{slug}.info.json` (raw info-endpoint bytes). One entry per
+    slug; the cached file's `hf_repo_id` + `hf_revision_sha` are
+    validated on read, and a SHA change triggers a re-sync that
+    overwrites in place rather than retaining historical
+    revisions.
   New clients should follow the same "raw bytes verbatim before
   any narrowing" rule; the exact directory layout is the
   client's call as long as the bytes survive on disk.
