@@ -426,9 +426,17 @@ async def test_golden_path_v1_release_gate(
        chat_assistant). Below 3 means upstream coverage regressed.
     2. Rows sorted ASC by cost_per_m_output_usd — a re-rank bug
        would defeat the whole point of budget_to_plan.
-    3. Every row's trust_envelope carries the 6 always-present
-       confidence domains AND `workload_assumption` (derived
-       prompt counts MUST carry this per spec/SHARED.md).
+    3. Every row's trust_envelope carries the deployment-mode-specific
+       required confidence domains: cloud_gpu_rental rows need
+       all 6 (pricing, fit_check, throughput, model_architecture,
+       gpu_specs, freshness); hosted_api_token rows need only 3
+       (pricing, throughput, freshness) since GPU / fit / model
+       architecture genuinely don't apply to a remote API. The M11
+       spec § Acceptance literal asserts all 6 uniformly — that
+       predates the hosted/rental split and is enforced
+       conditionally below. Every row regardless of deployment
+       mode also carries `workload_assumption` (derived prompt
+       counts MUST carry this per spec/SHARED.md).
     4. Envelope-level confidence == min(confidence_breakdown.values())
        per the weakest-link rollup contract.
     5. availability_modeled is False on every CostCell + caveat
