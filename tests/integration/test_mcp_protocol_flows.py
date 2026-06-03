@@ -103,6 +103,12 @@ def _build_gpu_price(
 
 
 def _build_gpu_catalog(*, slug: str = "h100sxm", vram_gb: int = 80) -> GpuCatalogRow:
+    """H100 SXM-shaped catalog row. `specs` carries memory_bandwidth_gbps
+    so tps_estimator Tier 3 (bandwidth heuristic) can fire — without it,
+    self-hosted rows fall through to Tier 4 refusal and the budget plan
+    returns only the hosted-API row. 3350 GB/s matches Kiely 2026
+    §3.2.1 H100 SXM HBM3 spec; cross-validated against
+    seeds/gpu_catalog_snapshot.yaml."""
     return GpuCatalogRow(
         slug=slug,
         name=slug.upper(),
@@ -110,7 +116,7 @@ def _build_gpu_catalog(*, slug: str = "h100sxm", vram_gb: int = 80) -> GpuCatalo
         architecture="Hopper",
         vram_gb=vram_gb,
         release_date=None,
-        specs={},
+        specs={"memory_bandwidth_gbps": 3350.0},
         raw={},
     )
 
@@ -402,6 +408,161 @@ async def test_user_asks_cheapest_plan_for_their_budget_and_model(
         # Budget-derived fields the client surfaces verbatim.
         assert first["cost_per_m_output_usd"] >= 0
         assert first["est_total_prompts"] >= 1
+
+
+# ---------- Golden path: v1 release gate (M11 acceptance criterion)
+
+
+@pytest.mark.asyncio
+async def test_golden_path_v1_release_gate(
+    server_with_warm_cache: Path,
+) -> None:
+    """The M11 release-gating golden path. CI fails this test, the
+    release does not ship. Same headline flow as
+    `test_user_asks_cheapest_plan_for_their_budget_and_model`
+    above, but with the spec/M11 § Acceptance criteria strictness:
+
+    1. >= 3 BudgetPlanRow returned for ($20, qwen-3-coder-30b,
+       chat_assistant). Below 3 means upstream coverage regressed.
+    2. Rows sorted ASC by cost_per_m_output_usd — a re-rank bug
+       would defeat the whole point of budget_to_plan.
+    3. Every row's trust_envelope carries the deployment-mode-specific
+       required confidence domains: cloud_gpu_rental rows need
+       all 6 (pricing, fit_check, throughput, model_architecture,
+       gpu_specs, freshness); hosted_api_token rows need only 3
+       (pricing, throughput, freshness) since GPU / fit / model
+       architecture genuinely don't apply to a remote API. The M11
+       spec § Acceptance literal asserts all 6 uniformly — that
+       predates the hosted/rental split and is enforced
+       conditionally below. Every row regardless of deployment
+       mode also carries `workload_assumption` (derived prompt
+       counts MUST carry this per spec/SHARED.md).
+    4. Envelope-level confidence == min(confidence_breakdown.values())
+       per the weakest-link rollup contract.
+    5. availability_modeled is False on every CostCell + caveat
+       text matches the spec's verbatim disclaimer.
+    6. fit_result.sufficiency_caveat is non-empty when a fit_result
+       is present — fits=True is necessary but not sufficient.
+
+    The M11 spec's literal code block omits `workload_profile_slug`
+    and would trigger a WorkloadElicitationResponse (status='workload_required')
+    rather than a list of rows. The spec text predates the workload
+    elicitation flow; passing `chat_assistant` is the conformant
+    way to exercise the underlying plan-generation surface."""
+    async with Client(transport=mcp) as client:
+        result = await client.call_tool(
+            "budget_to_plan",
+            {
+                "budget_usd": 20.0,
+                "model_slug": "qwen-3-coder-30b",
+                "workload_profile_slug": "chat_assistant",
+            },
+        )
+        rows = _unwrap(result)
+        if isinstance(rows, dict) and rows.get("status"):
+            pytest.fail(f"golden path returned a status response instead of plan rows: {rows!r}")
+
+        # (1) coverage floor — >= 3 rows. `build_budget_plan`
+        # defaults `top_n=3`; the cp_warm fixture provides 2 GPU
+        # price providers + 1 hosted_api_token quote which produces
+        # >= 3 viable rows. If the fixture or top_n default
+        # changes such that fewer rows survive, this assertion
+        # fires — that's intentional, the floor is the meaningful
+        # release-gating contract.
+        assert len(rows) >= 3, (
+            f"golden path returned only {len(rows)} row(s); spec/M11 acceptance "
+            f"requires >= 3 for ($20, qwen-3-coder-30b, chat_assistant). "
+            f"Check (a) cp_warm fixture row generation and (b) build_budget_plan "
+            f"top_n default."
+        )
+
+        # (2) sort: ASC by cost_per_m_output_usd. build_budget_plan
+        # filters out rows with None cost_per_m (no fit / Tier 4
+        # refusal) before returning, so every surviving row has a
+        # real cost and the sort assertion exercises the full
+        # response.
+        rows_dicts = [_as_dict(r) for r in rows]
+        costs = [r["cost_per_m_output_usd"] for r in rows_dicts]
+        assert all(c is not None for c in costs), (
+            f"build_budget_plan should filter None-cost rows before return; got costs={costs!r}"
+        )
+        assert costs == sorted(costs), (
+            f"rows must be ASC sorted by cost_per_m_output_usd; got {costs!r}"
+        )
+
+        # (3)-(6) per-row trust + availability + fit contracts.
+        # M11 spec § Acceptance asserted "all 6 confidence domains"
+        # uniformly, but that assumes cloud_gpu_rental rows. For
+        # hosted_api_token rows the gpu_specs / fit_check /
+        # model_architecture domains genuinely don't apply (no GPU
+        # to spec, no fit to check, no model architecture in our
+        # cache for a remote API). Conditioning the required-domain
+        # set on deployment_mode keeps the assertion truthful
+        # rather than forcing rows to fake N/A values.
+        rental_domains = {
+            "pricing",
+            "fit_check",
+            "throughput",
+            "model_architecture",
+            "gpu_specs",
+            "freshness",
+        }
+        hosted_domains = {"pricing", "throughput", "freshness"}
+        for idx, row in enumerate(rows_dicts):
+            envelope = row["trust_envelope"]
+            breakdown = envelope["confidence_breakdown"]
+            cost_cell = row["cost_cell"]
+            deployment_mode = cost_cell["deployment_mode"]
+            required_domains = (
+                rental_domains if deployment_mode == "cloud_gpu_rental" else hosted_domains
+            )
+
+            # (3a) the deployment-mode-specific required domains.
+            missing = required_domains - set(breakdown.keys())
+            assert not missing, (
+                f"row {idx} ({deployment_mode}): trust_envelope.confidence_breakdown "
+                f"missing required domains {missing!r}; full breakdown keys: "
+                f"{sorted(breakdown.keys())}"
+            )
+
+            # (3b) workload_assumption — budget_to_plan derives
+            # est_total_prompts from the workload profile, so spec
+            # contract requires this domain.
+            assert "workload_assumption" in breakdown, (
+                f"row {idx}: budget_to_plan synthesizes derived prompt counts "
+                f"from the workload profile, so workload_assumption MUST appear "
+                f"in confidence_breakdown per spec/SHARED.md"
+            )
+            assert envelope["assumptions"].get("workload_profile") == "chat_assistant"
+
+            # (4) weakest-link confidence rollup.
+            expected_min = min(breakdown.values())
+            assert envelope["confidence"] == pytest.approx(expected_min), (
+                f"row {idx}: envelope.confidence ({envelope['confidence']}) "
+                f"should equal min(confidence_breakdown.values()) ({expected_min}) "
+                f"per the weakest-link rollup contract"
+            )
+
+            # (5) availability is NEVER modeled by v1.
+            assert cost_cell["availability_modeled"] is False, (
+                f"row {idx}: availability_modeled should be False on every v1 "
+                f"CostCell (we model pricing, not rentability)"
+            )
+            assert "Price source does not guarantee" in cost_cell["availability_caveat"], (
+                f"row {idx}: availability_caveat doesn't carry the spec's verbatim "
+                f"disclaimer; got: {cost_cell['availability_caveat']!r}"
+            )
+
+            # (6) fit_result.sufficiency_caveat non-empty when a fit
+            # was attempted. Hosted-API-token rows have fit_result=None;
+            # that's fine — the assertion only fires when a fit was
+            # produced.
+            fit_result = cost_cell.get("fit_result")
+            if fit_result is not None:
+                assert fit_result.get("sufficiency_caveat"), (
+                    f"row {idx}: fit_result is present but sufficiency_caveat is empty; "
+                    f"fits=True is necessary but not sufficient per spec/SHARED.md"
+                )
 
 
 # ---------- Multi-turn: "Forgot to mention workload" → elicit → retry
