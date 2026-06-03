@@ -61,14 +61,21 @@ The stdio MCP server exposes:
 
 **Numerical tools** — each row carries its own `TrustEnvelope`:
 
-- **`fit_check(model, gpu, quant)`** — pure-math VRAM verdict
+- **`fit_check(model_slug, gpu_slug, quant_slug, tp_size=1,
+  batch_size=1, context_length=4096)`** — pure-math VRAM verdict
   with weight/KV-cache/overhead breakdown, headroom, blocking
   reasons, sufficiency caveat.
-- **`find_cheapest_deployment(model, workload_profile, …)`** —
+- **`find_cheapest_deployment(model_slug, quant_slug=None,
+  batch_size=1, context_length=4096, region=None, top_n=10)`** —
   ranked list of cost cells across providers, GPUs, quants.
-- **`compare_deployment_modes(model, workload_profile)`** —
-  side-by-side cloud-GPU-rental vs hosted-API-token economics.
-- **`budget_to_plan(budget_usd, model, workload_profile)`** —
+  `region` is accepted but a no-op in v1 (CP doesn't structure
+  region per gpu-price row).
+- **`compare_deployment_modes(model_slug, gpu_slug, quant_slug,
+  batch_size, context_length, workload_profile_slug)`** —
+  side-by-side cloud-GPU-rental vs hosted-API-token economics
+  at one op-point, conditioned on a workload profile.
+- **`budget_to_plan(budget_usd, model_slug,
+  workload_profile_slug=None, quant_slug=None, top_n=3)`** —
   ranked plan with `hours_available`, `est_total_prompts`,
   `est_wallclock_minutes` per row.
 
@@ -180,9 +187,9 @@ See [`MCP.md`](MCP.md) for per-client configuration blocks
 
 ## License
 
-MIT — declared in `pyproject.toml`. The separate question of the
-benchmark *dataset* license (CC-BY-4.0 vs MIT vs CC0) is still
-open and tracked under v2 work; see ADR-006.
+MIT — declared in `pyproject.toml`. The benchmark *dataset*
+(published as Parquet on Hugging Face Datasets) ships under
+CC-BY-4.0 per ADR-006.
 
 ## References
 
