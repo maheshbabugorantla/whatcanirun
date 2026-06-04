@@ -146,6 +146,7 @@ async def _prefetch_impl() -> int:
     from whatcanirun.catalog.hf_sync import HfModelSync
     from whatcanirun.mcp_tools.deps import load_runtime_deps
     from whatcanirun.paths import SEEDS_DIR, USER_CACHE_DIR, USER_CONFIG_DIR
+    from whatcanirun.pricing.artificial_analysis.client import ArtificialAnalysisClient
 
     seeds_dir: Path = SEEDS_DIR
     cache_dir: Path = USER_CACHE_DIR
@@ -160,10 +161,10 @@ async def _prefetch_impl() -> int:
     )
     print(f"prefetch: HF synced {len(synced)} tracked model(s)", file=sys.stderr)
 
-    print("prefetch: warming ComputePrices + AA caches", file=sys.stderr)
+    print("prefetch: warming ComputePrices caches", file=sys.stderr)
     deps = await load_runtime_deps(seeds_dir=seeds_dir, cache_dir=cache_dir, config_dir=config_dir)
     print(
-        "prefetch: cache warm — "
+        "prefetch: CP cache warm — "
         f"{len(deps.gpu_catalog)} gpus, "
         f"{len(deps.gpu_prices)} gpu-prices, "
         f"{len(deps.llm_catalog)} llm-catalog, "
@@ -171,6 +172,20 @@ async def _prefetch_impl() -> int:
         f"{len(deps.model_catalog)} hf-models",
         file=sys.stderr,
     )
+
+    # AA isn't touched by load_runtime_deps — it's a separate
+    # client M07's tps_estimator hits lazily on first need. Warm
+    # it here too when AA_API_KEY is set so the first tool call
+    # paying for Tier-2 throughput hits a warm AA cache.
+    aa_cache = cache_dir / "artificial_analysis"
+    aa_client = ArtificialAnalysisClient(cache_dir=aa_cache)
+    if aa_client.enabled:
+        print("prefetch: warming Artificial Analysis cache", file=sys.stderr)
+        aa_rows = await aa_client.get_models()
+        print(f"prefetch: AA cache warm — {len(aa_rows)} model rows", file=sys.stderr)
+    else:
+        print("prefetch: skipping AA (AA_API_KEY not set)", file=sys.stderr)
+
     return 0
 
 
@@ -192,7 +207,19 @@ def _run_prefetch() -> int:
             file=sys.stderr,
         )
         return 1
-    return asyncio.run(_prefetch_impl())
+    try:
+        return asyncio.run(_prefetch_impl())
+    except OSError as exc:
+        # File-write failures mid-run (cache dir exists but isn't
+        # writable, disk full, ENOENT on a per-source subdir we
+        # didn't pre-create) would otherwise surface as a traceback,
+        # breaking the CLI contract of "non-zero exit + stderr
+        # diagnostic on failure." Catch + convert here so the
+        # install script can branch cleanly on the exit code.
+        # Programmer errors (bugs in the impl) deliberately keep
+        # crashing with a traceback so they stay visible.
+        print(f"prefetch: filesystem failure: {exc}", file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> None:
