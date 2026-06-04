@@ -177,8 +177,11 @@ async def _prefetch_impl() -> int:
     # client M07's tps_estimator hits lazily on first need. Warm
     # it here too when AA_API_KEY is set so the first tool call
     # paying for Tier-2 throughput hits a warm AA cache.
-    aa_cache = cache_dir / "artificial_analysis"
-    aa_client = ArtificialAnalysisClient(cache_dir=aa_cache)
+    # AA client takes the ROOT cache dir and appends
+    # `/artificial_analysis` itself (see client.cache_dir property
+    # in pricing/artificial_analysis/client.py). Passing
+    # `cache_dir / "artificial_analysis"` here would double-nest.
+    aa_client = ArtificialAnalysisClient(cache_dir=cache_dir)
     if aa_client.enabled:
         print("prefetch: warming Artificial Analysis cache", file=sys.stderr)
         aa_rows = await aa_client.get_models()
