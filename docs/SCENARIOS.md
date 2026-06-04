@@ -105,7 +105,13 @@ context_length=8192)`.
 
 **What to verify:**
 
-- [ ] Sorted ascending by `cost_per_m_output_usd`
+- [ ] Sorted ascending by the mode-appropriate per-million-output
+      cost: `price_per_m_output_usd` for hosted-API rows,
+      `cost_per_m_output_usd_self_hosted` for rental rows. The
+      ranking key is picked per row by
+      `_rankable_cost_per_m_output` in
+      `src/whatcanirun/mcp_tools/find_cheapest.py`; rows whose
+      mode-appropriate field is `None` are pushed to the end
 - [ ] Each row carries its OWN `trust_envelope` (per-row contract;
       there is no top-level envelope for the list)
 - [ ] Each row mentions `availability_caveat` per `INSTRUCTIONS` rule 5
@@ -134,16 +140,22 @@ context_length=4096, workload_profile_slug="chat_assistant")`.
 
 **What to verify:**
 
-- [ ] Both `rental_economics` (cloud_gpu_rental) and
-      `hosted_economics` (hosted_api_token) populated
-- [ ] `workload_assumption` PRESENT in `confidence_breakdown` —
-      per-prompt cost is workload-derived
-- [ ] Claude names the break-even crossover (the rental vs hosted
-      decision flips at a workload volume threshold; the response
-      contains the data to compute it)
-- [ ] Claude surfaces both envelopes' WORST domains, not an average
-- [ ] If hosted-API row is missing for `llama-3-3-70b` because no
-      tracked provider hosts it, Claude says so — does not paper over
+- [ ] Response has `cloud_gpu_rental` and `hosted_api_token` fields
+      (per `DeploymentComparison` in
+      `src/whatcanirun/mcp_tools/compare_deployment.py:44-47`).
+      Either side may legitimately be `None` — `cloud_gpu_rental`
+      missing if no CP provider rents this GPU/region;
+      `hosted_api_token` missing if no tracked hosted provider
+      serves this model. Claude should name which side is missing
+      and why; the response surfaces enough info to do so
+- [ ] `cheaper_per_prompt` field reports the per-prompt verdict
+      (`cloud_gpu_rental` | `hosted_api_token` | `tie` | `unknown`).
+      Claude relays that verbatim — the per-prompt comparison IS
+      the answer; the tool does NOT compute a volume-threshold
+      break-even, so don't look for one
+- [ ] `workload_assumption` PRESENT in the response's envelope's
+      `confidence_breakdown` — per-prompt cost is workload-derived
+- [ ] Claude surfaces the envelope's WORST domain, not an average
 
 ---
 
@@ -246,8 +258,11 @@ context).
 > batch=32?"
 
 **Expected tool path:** Any tool that estimates TPS at batch>1 → at
-least one response row has `tps_source=requires_measurement`
-(per ADR-010: the v1 heuristic is single-stream only).
+least one response row has `tps_estimate.source ==
+"requires_measurement"` (per ADR-010: the v1 heuristic is
+single-stream only). The provenance field lives on the
+nested `TpsEstimate` object inside `CostCell.tps_estimate`, not at
+the top level of the row.
 
 **What to verify:**
 
@@ -301,9 +316,12 @@ budget question that should have routed to `budget_to_plan`):
   is the LLM client composing on its own — useful, but not part of
   the server's validation surface.
 - **Performance benchmarking** of the server itself. Use
-  `time uv run whatcanirun-mcp prefetch` for cold-cache cost;
-  warm-cache tool-call latency is bounded by the FastMCP roundtrip
-  (sub-second) per the release test's 13s-for-8-tests benchmark.
+  `time uv run whatcanirun-mcp prefetch` for cold-cache cost
+  (`tests/release/test_stdio_install.py`'s docstring cites ~30-60s
+  on a cold cache); warm-cache tool-call latency is bounded by the
+  FastMCP stdio roundtrip per the release-gate test, but a specific
+  wall-clock number isn't load-bearing for validation — the gate
+  itself is the timing contract.
 - **Adversarial input** (malformed slugs, path traversal in
   resolve_model, etc.). Those are server-side concerns covered by
   the existing boundary-validation tests in
