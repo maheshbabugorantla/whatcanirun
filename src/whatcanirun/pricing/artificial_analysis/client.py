@@ -458,7 +458,7 @@ class ArtificialAnalysisClient:
         byte-identical cache persistence. Shape validation moves
         out to the caller so a parse failure still leaves the
         bytes on disk for the investigator."""
-        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+        async with httpx.AsyncClient(timeout=self._timeout_s, follow_redirects=True) as client:
             response = await client.get(self._base_url, headers=self._headers())
         response.raise_for_status()
         # Top-level shape check happens before persistence so we

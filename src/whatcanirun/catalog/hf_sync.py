@@ -678,7 +678,7 @@ class HfModelSync:
         problem.
         """
         url = f"{HF_API_BASE}/{repo_id}"
-        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+        async with httpx.AsyncClient(timeout=self._timeout_s, follow_redirects=True) as client:
             response = await client.get(url, headers=self._headers())
         response.raise_for_status()
         return response.content
@@ -705,7 +705,7 @@ class HfModelSync:
         can see them); shape errors are the caller's problem.
         """
         url = f"{HF_RAW_BASE}/{repo_id}/raw/{sha}/config.json"
-        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+        async with httpx.AsyncClient(timeout=self._timeout_s, follow_redirects=True) as client:
             response = await client.get(url, headers=self._headers())
         response.raise_for_status()
         return response.content

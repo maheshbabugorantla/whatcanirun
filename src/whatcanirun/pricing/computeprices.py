@@ -184,7 +184,11 @@ class ComputePricesClient:
         `_fetch_and_project`.
         """
         url = f"{self._base_url}/{endpoint}"
-        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+        # follow_redirects=True so a `www.` <-> apex 308 from
+        # Vercel (the CP upstream's host) routes through cleanly.
+        # Without it the redirect surfaces as a HTTPStatusError that
+        # propagates out of `_fetch_or_empty` in deps.py.
+        async with httpx.AsyncClient(timeout=self._timeout_s, follow_redirects=True) as client:
             response = await client.get(url, headers=self._headers())
         response.raise_for_status()
         payload = response.json()
