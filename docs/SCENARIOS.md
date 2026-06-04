@@ -130,13 +130,20 @@ context_length=8192)`.
 - [ ] Each row mentions `availability_caveat` per `INSTRUCTIONS` rule 5
 - [ ] If any row has `pricing_type=spot`, Claude mentions preemption
       risk per `INSTRUCTIONS` rule 4
-- [ ] Claude names the freshness of CP pricing — `freshness.
-      computeprices` is on every envelope. Decay breakpoints are 2h
-      (0.95 → 0.75) and 24h (0.75 → 0.40) per
-      `freshness_confidence("computeprices", age)` in
-      `src/whatcanirun/trust/calibration.py`. Crossing either
-      breakpoint should surface as "prices may be stale" in Claude's
-      relay
+- [ ] Claude surfaces the CP freshness timestamp from
+      `trust_envelope.freshness["computeprices"]` so the user can
+      judge staleness for themselves. **Known v1 limitation:** the
+      decay-with-age calibration in
+      `src/whatcanirun/trust/calibration.py` (CP breakpoints at 2h
+      and 24h) is NOT currently applied to CostCell envelopes —
+      `_partial_envelope_for_gpu_rental` and
+      `_partial_envelope_for_hosted_api` in
+      `plan/cost_cells.py:520-547` hard-code
+      `confidence_breakdown["freshness"] = 0.8` regardless of the
+      cache's actual age. So Claude has the raw timestamp to relay
+      but no auto-decayed confidence value to anchor it on. A v2
+      candidate for wiring `freshness_confidence` through to the
+      CostCell envelope builders
 
 ---
 
