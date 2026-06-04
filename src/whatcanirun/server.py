@@ -19,6 +19,11 @@ rules block in spec/SHARED.md § "Trust contract".
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+
 from fastmcp import FastMCP
 
 from whatcanirun import __version__
@@ -120,13 +125,103 @@ from whatcanirun.mcp_tools.prompt import benchmark_on_budget as _benchmark_on_bu
 mcp.prompt(_benchmark_on_budget, name="benchmark-on-budget")
 
 
-def main() -> None:
-    """`uvx whatcanirun-mcp` entry point. Runs the FastMCP stdio
-    transport by default — the calling client (Claude Desktop,
-    Cursor, etc.) drives the loop via the spawned process's
-    stdin/stdout. `show_banner=False` keeps stderr clean so an
-    MCP client doesn't see startup noise interleaved with JSON-RPC
-    frames (some clients are strict about non-protocol output)."""
+async def _prefetch_impl() -> int:
+    """Warm every on-disk cache the numerical tools read at call
+    time, so the first MCP `tools/call` doesn't pay the cold-cache
+    1-3s upstream-fetch latency.
+
+    Two halves: HF first (catalog sync via `HfModelSync.sync_all_tracked`,
+    which fetches per-tracked-model config.json + model info under
+    `<cache_dir>/huggingface/`), then `load_runtime_deps()` which
+    warms ComputePrices (`<cache_dir>/computeprices/`) and reads
+    the HF cache the sync just populated.
+
+    Per-source progress goes to stderr (stdout is reserved for the
+    eventual stdio protocol path; keeping stderr the only chatter
+    channel matches the rest of the server). Returns 0 on success
+    even if individual rows or endpoints degraded — partial warmup
+    is still useful and matches `load_runtime_deps`'s tolerate-and-
+    continue contract. Returns non-zero only on a setup failure
+    that prevents either step from running at all."""
+    from whatcanirun.catalog.hf_sync import HfModelSync
+    from whatcanirun.mcp_tools.deps import load_runtime_deps
+    from whatcanirun.paths import SEEDS_DIR, USER_CACHE_DIR, USER_CONFIG_DIR
+
+    seeds_dir: Path = SEEDS_DIR
+    cache_dir: Path = USER_CACHE_DIR
+    config_dir: Path = USER_CONFIG_DIR
+
+    print(f"prefetch: HF sync_all_tracked → {cache_dir / 'huggingface'}", file=sys.stderr)
+    user_yaml = config_dir / "user_models.yaml"
+    hf = HfModelSync(cache_dir=cache_dir)
+    synced = await hf.sync_all_tracked(
+        tracked_yaml_path=seeds_dir / "tracked_models.yaml",
+        user_yaml_path=user_yaml if user_yaml.exists() else None,
+    )
+    print(f"prefetch: HF synced {len(synced)} tracked model(s)", file=sys.stderr)
+
+    print("prefetch: warming ComputePrices + AA caches", file=sys.stderr)
+    deps = await load_runtime_deps(seeds_dir=seeds_dir, cache_dir=cache_dir, config_dir=config_dir)
+    print(
+        "prefetch: cache warm — "
+        f"{len(deps.gpu_catalog)} gpus, "
+        f"{len(deps.gpu_prices)} gpu-prices, "
+        f"{len(deps.llm_catalog)} llm-catalog, "
+        f"{len(deps.llm_prices)} llm-prices, "
+        f"{len(deps.model_catalog)} hf-models",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _run_prefetch() -> int:
+    """Synchronous wrapper around `_prefetch_impl` for the argparse
+    handler. Separated so tests can monkeypatch this single
+    callable without having to mock the async runner. Also creates
+    the cache directory upfront (blocking I/O outside the async
+    path keeps `_prefetch_impl` ruff-ASYNC240 clean and matches
+    the load_runtime_deps convention of pre-creating per-source
+    subdirs)."""
+    from whatcanirun.paths import USER_CACHE_DIR
+
+    try:
+        USER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(
+            f"prefetch: cannot create cache dir {USER_CACHE_DIR}: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    return asyncio.run(_prefetch_impl())
+
+
+def main(argv: list[str] | None = None) -> None:
+    """`whatcanirun-mcp` entry point. Three modes:
+
+    - No args → run the FastMCP stdio transport. This is the mode
+      every MCP client uses (Claude Desktop, Cursor, etc. launch
+      the binary as a subprocess and talk JSON-RPC over its
+      stdin/stdout). `show_banner=False` keeps stderr clean so a
+      client doesn't see startup noise interleaved with frames.
+    - `--version` → print package version, exit 0. Clean-machine
+      smoke test gate.
+    - `prefetch` → run `_run_prefetch()` and exit with its return
+      code. Warms CP + HF caches synchronously so the first
+      tools/call doesn't pay the cold-cache latency."""
+    parser = argparse.ArgumentParser(
+        prog="whatcanirun-mcp",
+        description="Self-hosted stdio MCP server for inference cost/fit/throughput plans.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser(
+        "prefetch",
+        help="Warm CP + HF caches synchronously (avoids cold-cache delay on first tool call).",
+    )
+    args = parser.parse_args(argv)
+
+    if args.command == "prefetch":
+        sys.exit(_run_prefetch())
     mcp.run(show_banner=False)
 
 
