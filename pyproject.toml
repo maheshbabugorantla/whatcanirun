@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MCP server: convert LLM inference budgets into ranked, source-backed plans"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Mahesh Babu Gorantla" },
 ]

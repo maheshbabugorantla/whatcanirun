@@ -69,12 +69,18 @@ EOF
     exit 1
 fi
 
-echo "==> uv sync (with --extra dev so pytest is on PATH for the release gate)"
 # `dev` is a PEP 621 [project.optional-dependencies] group, not a
-# uv-native dev-dependencies block. `uv sync` without --extra dev
-# would skip it, and the release-gate step below would fail with
-# "pytest: command not found".
-uv sync --extra dev
+# uv-native dev-dependencies block — `uv sync` without --extra dev
+# would skip it. Only ask for it when the release-gate step will
+# actually run (default); under --no-test we'd otherwise install
+# pytest + mypy + ruff for no reason.
+if [[ "$RUN_TEST" -eq 1 ]]; then
+    echo "==> uv sync (--extra dev so pytest is on PATH for the release gate)"
+    uv sync --extra dev
+else
+    echo "==> uv sync (runtime deps only; --no-test skips the dev extras)"
+    uv sync
+fi
 
 if [[ "$PREFETCH" -eq 1 ]]; then
     echo "==> warming CP + HF caches (this is the slow first run)"
