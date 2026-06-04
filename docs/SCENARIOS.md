@@ -50,9 +50,15 @@ follow up by asking you to pick one (Scenario 6 covers this branch).
 **What to verify:**
 
 - [ ] Ranked rows by `cost_per_m_output_usd` (cheapest first)
-- [ ] Each row mentions `hours_available`, `est_total_prompts`, and
-      `est_wallclock_minutes` — those are the answer to "what can I
-      actually run?"
+- [ ] Each row mentions `est_total_prompts` (always populated).
+      Rental rows additionally surface `hours_available` and
+      `est_wallclock_minutes`; for hosted-API rows BOTH are `None`
+      by design (per `budget_to_plan.py:96-105`: no hourly_usd
+      because the provider runs the inference, and decode_tps is
+      None for the row's perspective), so when a hosted row tops
+      the ranking, Claude should name only `est_total_prompts` for
+      it — naming the null fields as missing would misrepresent the
+      shape
 - [ ] Claude states the workload assumption verbatim. The slug is
       in `assumptions["workload_profile"]` (a string) and the token
       counts are in separate sibling keys
@@ -150,16 +156,25 @@ context_length=4096, workload_profile_slug="chat_assistant")`.
 - [ ] Response has `cloud_gpu_rental` and `hosted_api_token` fields
       (per `DeploymentComparison` in
       `src/whatcanirun/mcp_tools/compare_deployment.py:44-47`).
-      Either side may legitimately be `None` — `cloud_gpu_rental`
-      missing if no CP provider rents this GPU/region;
-      `hosted_api_token` missing if no tracked hosted provider
-      serves this model. Claude should name which side is missing
-      and why; the response surfaces enough info to do so
+      **Known v1 limitation:** `hosted_api_token` is currently
+      always `None` from this tool. `compare_deployment_modes` passes
+      `gpu_slug` + `quant_slug` to `query_cost_cells`, which triggers
+      the `hosted_filtered_out` branch in
+      `plan/cost_cells.py:289-292` (hosted-API rows have no GPU/quant
+      to match) and skips the hosted side entirely. So in practice
+      this scenario validates the rental row + verdict only;
+      cross-mode comparison routes through `find_cheapest_deployment`
+      with the model_slug-only filter instead — a v2 candidate for a
+      tool-routing fix or an explicit `deployment_mode` override
 - [ ] `cheaper_per_prompt` field reports the per-prompt verdict
       (`cloud_gpu_rental` | `hosted_api_token` | `tie` | `unknown`).
       Claude relays that verbatim — the per-prompt comparison IS
       the answer; the tool does NOT compute a volume-threshold
-      break-even, so don't look for one
+      break-even, so don't look for one. Note: because of the
+      always-None hosted side above, the verdict today is always
+      `unknown` per `_verdict` in compare_deployment.py:79-91 (one
+      side missing → unknown); Claude should surface that honestly
+      rather than guess
 - [ ] `workload_assumption` PRESENT in the response's envelope's
       `confidence_breakdown` — per-prompt cost is workload-derived
 - [ ] Claude surfaces the envelope's WORST domain, not an average
