@@ -187,12 +187,20 @@ context_length=4096, workload_profile_slug="chat_assistant")`.
 
 > "Can I run NousResearch/Hermes-2-Pro-Mistral-7B on an A100?"
 
-**Expected tool path:** `fit_check` is called with an unknown slug →
-server returns `UnknownModelResponse` with elicitation prompt →
-Claude asks you for the HF repo_id (if not already in the question) →
-calls `resolve_model(model_slug="hermes-2-pro-mistral",
+**Expected tool path:** `fit_check` is called with an unknown slug
+(whatever Claude derived from the natural-language question — it
+might be `hermes-2-pro-mistral`, `hermes-2-pro-mistral-7b`,
+`nous-hermes-2`, etc.; different clients pick different slugs) →
+server returns `UnknownModelResponse` echoing
+`requested_model_slug` verbatim (no canonicalization happens; see
+`dispatch.py:68`) → Claude asks you for the HF repo_id (if not
+already in the question) → calls
+`resolve_model(model_slug=<the same slug the client originally tried>,
 hf_repo_id="NousResearch/Hermes-2-Pro-Mistral-7B")` → retries
-`fit_check` against the now-synced model.
+`fit_check` against the now-synced model. Don't false-fail the
+scenario if Claude's chosen slug differs from the one you'd have
+picked — the contract is "the client chooses, the server echoes",
+not "the server suggests a canonical slug".
 
 **What to verify:**
 
