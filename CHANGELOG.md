@@ -4,9 +4,9 @@ All notable changes to whatcanirun are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — Unreleased
+## [0.1.0] — 2026-06-04
 
-Date filled in at tag-cut (M12 Slice G). First public release. v1 ships as a clone-install repo for power users
+First public release. v1 ships as a clone-install repo for power users
 on a host with Python 3.12 + `uv` (or Docker). PyPI publication and MCP
 registry submissions are deferred to v2 once the tool surface stabilizes
 through real usage; see
