@@ -176,13 +176,18 @@ hf_repo_id="NousResearch/Hermes-2-Pro-Mistral-7B")` → retries
 
 **Question to ask:**
 
-> "How many prompts can I run on a 4090 with $20?"
+> "How many prompts can I run on $20 of Qwen 2.5 7B?"
+
+The question deliberately omits a workload profile — that's what
+triggers the elicitation. It also doesn't pin a GPU; `budget_to_plan`
+ranks across GPUs and the point here is the workload branch, not the
+fit branch.
 
 **Expected tool path:** `budget_to_plan(budget_usd=20.0,
-model_slug="...", workload_profile_slug=None)` → server returns
-`WorkloadElicitationResponse` with the 3 v1 profiles → Claude shows
-the choices → user picks → retry `budget_to_plan` with the chosen
-slug.
+model_slug="qwen-2-5-7b", workload_profile_slug=None)` → server
+returns `WorkloadElicitationResponse` with the 3 v1 profiles → Claude
+shows the choices → user picks → retry `budget_to_plan` with the
+chosen slug.
 
 **What to verify:**
 
@@ -214,13 +219,19 @@ context).
 - [ ] Resource is actually read (Claude Code shows resource reads in
       its tool inspector; in Claude Desktop the resource fetch is
       visible in the developer log)
-- [ ] Returned JSON names ComputePrices, Hugging Face, AND
-      Artificial Analysis (only if `AA_API_KEY` is set) explicitly
-- [ ] Each upstream carries its `license_attribution` string — the
-      AA attribution requirement per AA's free-tier API terms is
-      load-bearing legally
-- [ ] `verify_links` are real, resolvable URLs Claude can recommend
-      the user audit
+- [ ] Returned JSON's `sources[]` array names ComputePrices, Hugging
+      Face, AND Artificial Analysis. AA appears regardless of whether
+      `AA_API_KEY` is set — the static document lists every potential
+      contributor, and AA's `attribution` text explains it's an
+      optional tier the server runs without
+- [ ] Each `sources[]` entry has `name`, `url`, `attribution`,
+      `role`, and `license` fields. The AA entry's `attribution`
+      string is the load-bearing one — AA's free-tier API terms
+      require it on every consumer-visible surface
+- [ ] Each entry's `url` is a real, resolvable address Claude can
+      point the user at for audit (per-row `verify_links` live on
+      individual tool responses' trust envelopes — those are
+      Scenarios 1-4's surface, not this static-document surface)
 
 ---
 
