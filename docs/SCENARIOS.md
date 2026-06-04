@@ -53,10 +53,14 @@ follow up by asking you to pick one (Scenario 6 covers this branch).
 - [ ] Each row mentions `hours_available`, `est_total_prompts`, and
       `est_wallclock_minutes` — those are the answer to "what can I
       actually run?"
-- [ ] Claude states the workload assumption verbatim, naming
-      `chat_assistant`'s `(avg_input_tokens, avg_output_tokens)` shape
-      from the `assumptions["workload_profile"]` field. Per the
-      `INSTRUCTIONS` string rule 6, this is mandatory when
+- [ ] Claude states the workload assumption verbatim. The slug is
+      in `assumptions["workload_profile"]` (a string) and the token
+      counts are in separate sibling keys
+      `assumptions["avg_input_tokens"]` /
+      `assumptions["avg_output_tokens"]` — both per
+      `build_budget_plan_envelope` in
+      `src/whatcanirun/trust/builders.py`. Per the `INSTRUCTIONS`
+      string rule 6, surfacing the profile is mandatory when
       `workload_assumption` appears in `confidence_breakdown`.
 - [ ] Claude names the WORST domain in the confidence breakdown (most
       commonly `throughput` at 0.60 or 0.70 depending on AA coverage).
@@ -111,7 +115,10 @@ context_length=8192)`.
       ranking key is picked per row by
       `_rankable_cost_per_m_output` in
       `src/whatcanirun/mcp_tools/find_cheapest.py`; rows whose
-      mode-appropriate field is `None` are pushed to the end
+      mode-appropriate field is `None` (e.g. a rental cell whose
+      throughput hit `requires_measurement`) are FILTERED OUT
+      entirely — they don't appear at the end of the list, so
+      don't look for them there
 - [ ] Each row carries its OWN `trust_envelope` (per-row contract;
       there is no top-level envelope for the list)
 - [ ] Each row mentions `availability_caveat` per `INSTRUCTIONS` rule 5
