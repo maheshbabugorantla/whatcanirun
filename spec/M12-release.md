@@ -1,4 +1,4 @@
-# M12 — Release (PyPI + Registry Submissions)
+# M12 — Release (clone-install, power-user audience)
 
 **Status:** ⬜ Not started
 **Effort:** 3h
@@ -11,117 +11,296 @@
 
 ## Goal
 
-`uvx whatcanirun-mcp` works from a clean machine. The package is published to PyPI. The server is listed in three MCP registries: PulseMCP, mcpservers.org, and the official `anthropic/registry` repo. Glama.ai is a stretch goal.
+`git clone && uv run whatcanirun-mcp` (host-uv path) — or
+`docker build && docker run --rm -i whatcanirun-mcp` (Docker path)
+— produces a working stdio MCP server that power users can wire
+into their MCP client config. A scripted FastMCP `Client` over
+`StdioTransport` exercises every tool, resource, and prompt and
+audits the trust-envelope invariants on the response shapes.
+
+A new `whatcanirun-mcp prefetch` subcommand runs the upstream
+download + index step synchronously so the cold-cache delay is
+an observable operator action instead of a hidden first-call
+surprise.
+
+PyPI publishing and MCP-registry submissions are **deferred to
+v2** — see § Deferred to v2 below. v1 ships as a self-hosted clone
+target: the GitHub repo, a tagged `v0.1.0` release, and the
+README install block are the only discovery surfaces.
+
+---
+
+## Audience
+
+Power users who:
+
+- have `git`, `uv`, and either Python 3.12 or Docker on their host;
+- are comfortable pasting a JSON config block that points at a
+  cloned directory or a docker image they built locally;
+- want to inspect the source before running it.
+
+GUI users who'd benefit from a one-click `uvx`-style install are
+explicitly the *v2 audience*, not v1's. v1 stabilizes the API
+through real usage; v2 publishes the artifact once the surface
+isn't churning.
 
 ---
 
 ## Scope
 
-### Pre-release checklist
+### Slice A — `prefetch` subcommand
 
-1. **Clean-machine test** — in a fresh Docker container (NOT the sandbox), run:
-   ```bash
-   docker run --rm -it python:3.12-slim bash
-   pip install uv
-   uvx whatcanirun-mcp --version
-   uvx whatcanirun-mcp  # confirm stdio handshake works
-   ```
-   If this fails, the release is not ready. Common cause: missing data files in the wheel (check `tool.hatch.build.targets.wheel.packages` and `include`).
+Add an argparse layer to `src/whatcanirun/server.py:main`:
 
-2. **Seed data bundling** — `seeds/*.yaml` and `seeds/benchmark_cells.parquet` MUST be in the wheel. Verify with:
-   ```bash
-   uv pip download whatcanirun==0.1.0 --no-deps -d /tmp/whl
-   unzip -l /tmp/whl/whatcanirun-0.1.0-*.whl | grep seeds/
-   ```
+- `whatcanirun-mcp` (no args) — current behaviour: `mcp.run(show_banner=False)`.
+- `whatcanirun-mcp prefetch` — calls `load_runtime_deps()`
+  synchronously, emitting per-source progress to stderr
+  (ComputePrices endpoints, HuggingFace `sync_all_tracked`,
+  optional Artificial Analysis). Exits 0 on success, non-zero
+  with a stderr diagnostic on failure.
+- `whatcanirun-mcp --version` — prints `whatcanirun.__version__`
+  and exits 0. Used by the clean-machine smoke test.
 
-3. **Version bump** — `pyproject.toml` version from `0.0.1` to `0.1.0` (first public release).
+Tests (`tests/test_prefetch_cli.py`) cover argparse routing
+without hitting the network; the prefetch path is exercised
+end-to-end by Slice C's release-marked test.
 
-4. **CHANGELOG.md** — first entry. Lists every milestone shipped, all ADRs locked, all upstream sources with attribution.
+### Slice B1 — host-uv install path
 
-5. **License finalized** — confirm `MIT` (or chosen alternative) in `pyproject.toml` and `LICENSE` file.
-
-### Publish to PyPI
+The canonical install for v1:
 
 ```bash
-uv build                          # produces dist/whatcanirun-0.1.0.tar.gz and .whl
-uv publish                        # uses PYPI_TOKEN env var (or interactive)
+git clone https://github.com/maheshbabugorantla/whatcanirun
+cd whatcanirun
+uv sync
+uv run whatcanirun-mcp prefetch
 ```
 
-Verify on https://pypi.org/project/whatcanirun/ within 5 minutes.
+MCP client config block points at the cloned directory:
 
-### Registry submissions
+```json
+{
+  "command": "uv",
+  "args": ["run", "--directory", "/abs/path/to/whatcanirun", "whatcanirun-mcp"]
+}
+```
 
-1. **PulseMCP** — https://www.pulsemcp.com/submit
-   Fields: name, description, GitHub URL, install command, screenshot (optional but recommended — show a Claude Desktop conversation using `budget_to_plan`)
+`scripts/install_host_uv.sh` (idempotent) is the smoke harness
+used by Slice C's release gate and quoted directly in the README.
 
-2. **mcpservers.org** — open a PR against the registry repo (likely `mcp-servers/mcp-servers` or similar; check at submission time)
-   Required: server name, description, install command, source URL, license
+### Slice B2 — Docker install path (fallback)
 
-3. **anthropic/registry** — open a PR against the official Anthropic MCP registry
-   Follow their CONTRIBUTING.md; likely requires:
-   - Manifest JSON with tool/resource/prompt schemas
-   - Demo screenshot
-   - Maintainer contact
+`Dockerfile` based on `python:3.12-slim`:
 
-4. **Glama.ai** — submit at https://glama.ai/mcp/servers (stretch — may require manual review delay)
+- `uv` installed; `uv sync --frozen` for reproducible deps;
+- seeds copied in;
+- entry point `["whatcanirun-mcp"]`;
+- `WORKDIR` and `XDG_CACHE_HOME` set so the named cache volume
+  lands at the expected on-disk layout.
 
-### Post-release
+`scripts/run_mcp_docker.sh` wraps the launch invocation
+(`docker run --rm -i -v whatcanirun-cache:/root/.cache/whatcanirun
+-e COMPUTEPRICES_API_KEY -e HF_TOKEN -e AA_API_KEY
+whatcanirun:latest`) so the MCP client config block stays a
+single-line `command` pointing at the script. Cache lives on a
+named volume so the next launch is warm.
 
-- Tweet/social announcement (optional)
-- GitHub release with CHANGELOG.md excerpt
-- Pin the install instructions to the repo top
+No image is published anywhere in v1. Users build locally with
+`docker build -t whatcanirun .`. Container-registry publishing
+sits with PyPI in § Deferred to v2.
+
+### Slice C — FastMCP stdio release gate
+
+`tests/release/test_stdio_install.py` is marked
+`@pytest.mark.release` so it does not run in the default
+`pytest -q` CI suite. The gate test:
+
+1. spawns `uv run whatcanirun-mcp` as a subprocess;
+2. attaches a `fastmcp.Client` over `StdioTransport`;
+3. drives the Phase-3 tool battery from the test plan:
+   - `list_catalog()` → GPUs + providers + tracked models;
+   - `fit_check(llama-3-1-70b-instruct, h100-80gb, fp16, 1, 1, 4096)`
+     → `fits=True`, breakdown sums match weight + KV + overhead,
+     `sufficiency_caveat` populated;
+   - `find_cheapest_deployment(llama-3-1-8b-instruct)`
+     → top-10 sorted ascending by `cost_per_m_output_usd`;
+   - `compare_deployment_modes(llama-3-1-8b-instruct, h100-80gb,
+     fp16, 1, 4096, chat_short)` → both rows present,
+     `workload_assumption` in both envelopes;
+   - `budget_to_plan(100.0, llama-3-1-70b-instruct, chat_short)`
+     → ranked plan with `est_total_prompts` populated per row.
+4. reads both resources (`cost-cells://current`,
+   `cost-cells://provenance`) and the `/benchmark-on-budget` prompt;
+5. for every numerical response, asserts the trust-envelope
+   invariants:
+   - `trust_envelope` present;
+   - `confidence == min(confidence_breakdown.values())`;
+   - `workload_assumption` present iff the response synthesized a
+     workload-derived count;
+   - `verify_links` non-empty;
+   - `freshness` per source matches a real datetime.
+
+Invocation: `pytest -m release` (locally), and in
+`scripts/install_host_uv.sh` post-prefetch.
+
+### Slice D — `CHANGELOG.md`
+
+First entry — `## [0.1.0] — 2026-06-XX`. Lists:
+
+- every milestone shipped (M00–M12), with the M10 partial-ship
+  note (Tier 1b removed from v1) called out explicitly;
+- every ADR locked (ADR-001 through ADR-015), grouped by concern;
+- every upstream attributed (ComputePrices, Hugging Face,
+  Artificial Analysis, Kiely 2026 *Inference Engineering*
+  methodology), with license and verify-links;
+- known limitations: Tier 1a `own_measured` deferred to v2 M17;
+  Tier 1b `public_benchmark_anchor` removed from v1 and not tied
+  to a v2 milestone; TPS heuristic is single-stream only (ADR-010);
+- license terms (MIT for the project, CC-BY-4.0 for the
+  benchmark dataset per ADR-006);
+- explicit "not on PyPI in v1" note pointing at § Deferred to v2.
+
+### Slice E — `docs/MCP.md` flip
+
+Replace all four client config blocks (Claude Desktop, Claude
+Code, Cursor, Cline) with the host-uv variant plus a Docker
+alternative. Add a top "v1 install" note saying PyPI lands in v2.
+Update troubleshooting: `uvx: command not found` →
+`uv: command not found`; the cold-cache section refers users to
+`whatcanirun-mcp prefetch`.
+
+### Slice F — README install block
+
+A canonical install block at the README top:
+
+1. host-uv path (headline) — clone, sync, prefetch, wire into
+   client config;
+2. Docker path (fallback) — build, run via the launch script,
+   wire into client config;
+3. link out to [`docs/MCP.md`](../docs/MCP.md) for per-client
+   examples;
+4. link out to [`docs/TRUST.md`](../docs/TRUST.md) for the
+   trust contract.
+
+### Slice G — Release cut
+
+After PR merge to main:
+
+1. `git tag v0.1.0`, `git push origin v0.1.0`;
+2. `gh release create v0.1.0` with the CHANGELOG `[0.1.0]`
+   section as the body;
+3. flip `spec/INDEX.md` M12 row from ⬜ to ✓ on a small commit;
+4. update `docs/PRD.md` M12 row label.
+
+---
+
+## Deferred to v2
+
+Original M12 included PyPI publishing and three MCP-registry
+submissions (PulseMCP, mcpservers.org, anthropic/registry).
+Those are deferred to v2 because:
+
+- v1 has not been used by anyone but the maintainer; the tool
+  signatures, the trust-envelope shape, and the cache layout
+  may still need a churn round once real users hit them. A
+  published PyPI artifact constrains that churn.
+- Registry submissions are discovery surfaces — useful when the
+  product is stable, expensive (in maintenance and review-cycle
+  time) when it isn't.
+- Reserving the `whatcanirun` PyPI name *now* (against
+  squatting) is cheap and worth doing; *publishing* `0.1.0` to
+  it is not.
+
+When usage signals justify it (the `spec/INDEX.md` v2 trigger
+table), v2 will:
+
+1. publish to PyPI as `whatcanirun` v0.2.0 (or higher);
+2. add a `whatcanirun-mcp` console script alias if the import
+   path differs from the install path;
+3. submit to PulseMCP via https://www.pulsemcp.com/submit;
+4. open a PR against the mcpservers.org registry repo;
+5. open a PR against `anthropic/registry`;
+6. (stretch) submit to Glama.ai at https://glama.ai/mcp/servers;
+7. publish a docker image to GHCR for the Docker install path
+   so users don't need to build locally.
 
 ---
 
 ## Vertical slices
 
-1. **Slice A: Clean-machine test infrastructure** — script in `scripts/test_clean_machine.sh` that spins up the Docker container and runs the smoke test
-2. **Slice B: Seed bundling** — fix `pyproject.toml` if seeds aren't in the wheel; verify with the unzip command
-3. **Slice C: CHANGELOG.md** — write it; commit
-4. **Slice D: Version bump + release commit** — tag `v0.1.0`
-5. **Slice E: PyPI publish** — `uv publish`; verify; smoke test from PyPI
-6. **Slice F: PulseMCP submission** — fill out the form, screenshot in hand
-7. **Slice G: mcpservers.org PR** — open the PR
-8. **Slice H: anthropic/registry PR** — open the PR
+1. **Slice A:** `prefetch` subcommand + argparse — TDD.
+2. **Slice B1:** host-uv install path + `install_host_uv.sh`.
+3. **Slice B2:** `Dockerfile` + `run_mcp_docker.sh`.
+4. **Slice C:** FastMCP stdio release-gate test.
+5. **Slice D:** `CHANGELOG.md` v0.1.0 entry.
+6. **Slice E:** flip `docs/MCP.md` client config blocks.
+7. **Slice F:** README install block.
+8. **Slice G:** post-merge release cut (tag + GitHub Release +
+   `spec/INDEX.md` flip).
 
 ---
 
 ## Acceptance criteria
 
-- [ ] `uvx whatcanirun-mcp --version` works from a clean Python 3.12 container, no pre-installed deps
-- [ ] Seeds (`seeds/*.yaml`, `benchmark_cells.parquet`) are bundled in the wheel
-- [ ] PyPI listing live at https://pypi.org/project/whatcanirun/
-- [ ] `CHANGELOG.md` exists with v0.1.0 entry
-- [ ] Git tag `v0.1.0` pushed; GitHub Release published
-- [ ] PulseMCP submission accepted (verify within 24h)
-- [ ] mcpservers.org PR opened (merge may take longer)
-- [ ] anthropic/registry PR opened (merge may take longer)
+- [ ] `whatcanirun-mcp --version` prints the current
+      `whatcanirun.__version__` and exits 0.
+- [ ] `whatcanirun-mcp prefetch` runs `load_runtime_deps()`
+      synchronously, emitting per-source progress to stderr, and
+      exits 0 on success.
+- [ ] `scripts/install_host_uv.sh` runs `uv sync`, `prefetch`, and
+      the release-gate test against a fresh clone of the working
+      tree and exits 0.
+- [ ] `docker build -t whatcanirun .` builds; the resulting image
+      starts as a stdio MCP server when launched via
+      `scripts/run_mcp_docker.sh`.
+- [ ] `tests/release/test_stdio_install.py` passes under
+      `pytest -m release`; trust-envelope invariants asserted per
+      § Slice C.
+- [ ] `docs/MCP.md` shows the clone-install config blocks for all
+      four supported clients; no `uvx whatcanirun-mcp` references
+      remain except in the "v2 will publish to PyPI" note.
+- [ ] `README.md` has the canonical install block at the top.
+- [ ] `CHANGELOG.md` exists with the `[0.1.0]` entry.
+- [ ] Git tag `v0.1.0` exists on `main` and a GitHub Release with
+      the CHANGELOG excerpt is published.
+- [ ] `spec/INDEX.md` and `docs/PRD.md` M12 rows flipped to ✓.
 
 ---
 
 ## Common pitfalls
 
-- **Wheel missing seed data.** `hatchling` doesn't include non-Python files by default. Add to `pyproject.toml`:
-  ```toml
-  [tool.hatch.build.targets.wheel]
-  packages = ["src/whatcanirun"]
-  include = ["seeds/*.yaml", "seeds/*.parquet"]
-  ```
-- **PyPI name squatting.** Reserve `whatcanirun` (or your chosen name) BEFORE M12 — earlier in the project, even before M00. If someone else takes it, you have to rename everything.
-- **AA attribution missing.** Their ToS requires attribution on every product surface using their data. Confirm `docs/TRUST.md`, `README.md`, and `cost-cells://provenance` all name Artificial Analysis with the link.
-- **CI green ≠ release-ready.** CI uses fixtures. The clean-machine test uses live `uvx` install. Always run both.
+- **`uv run --directory` doesn't pick up `.env` automatically.**
+  The clone-install path inherits env from the client config's
+  `env:` block (recommended) or the launching shell (Claude Code
+  in a terminal). `docs/MCP.md` already documents this; the
+  same caveats apply.
+- **Docker stdio + cold cache.** Without a named cache volume,
+  every `docker run` is cold. `scripts/run_mcp_docker.sh` MUST
+  mount a named volume by default — the v1 cache lives at
+  `/root/.cache/whatcanirun` inside the container; the volume
+  name `whatcanirun-cache` is the convention.
+- **PR description must say "v1 is not on PyPI".** First-time
+  visitors who skim the README and look for `pip install
+  whatcanirun` need to know they won't find it on the index.
+- **Release notes must repeat the M10 partial-ship language.**
+  The "Tier 1b removed from v1, NOT tied to v2 M17" detail is
+  load-bearing for the trust contract and silently changing it
+  in release notes would undo the M11 docs reconciliation.
 
 ---
 
 ## After M12
 
-You shipped v1. Take a break. Don't start v2 immediately — wait for usage signals (the `INDEX.md` v2 trigger conditions). v1 should run for at least 30 days before you decide what's worth building next.
+v1 is shipped. Take a break. Don't start v2 immediately — wait
+for usage signals (the `INDEX.md` v2 trigger conditions). v1
+should run for at least 30 days before deciding what's worth
+building next.
 
 ---
 
 ## When done
 
 Commit:
-> `M12: v0.1.0 release — published to PyPI, listed on PulseMCP/mcpservers.org/anthropic-registry`
+> `M12: v0.1.0 release — clone-install (host-uv + Docker), prefetch CLI, release-gate test, CHANGELOG; PyPI deferred to v2`
 
 Mark M12 ✓ in `INDEX.md`. **v1 is shipped.**
