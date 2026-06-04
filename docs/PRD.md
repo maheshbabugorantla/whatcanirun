@@ -116,8 +116,8 @@ PRD:
 | M08 | Cost cells join layer | ✓ |
 | M09 | MCP server | ✓ |
 | M10 | Benchmark seeds (public sources) | ✓ (partial — see below) |
-| M11 | Tests + golden-path + docs | in flight |
-| M12 | Release / uvx-installable | pending |
+| M11 | Tests + golden-path + docs | ✓ |
+| M12 | Release (clone-install) | in flight |
 
 ### M10 partial-ship note
 

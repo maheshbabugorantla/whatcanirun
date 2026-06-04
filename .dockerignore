@@ -1,0 +1,49 @@
+# M12 Slice B2: docker build context. Keep it small.
+#
+# The Dockerfile only copies src/, seeds/, pyproject.toml,
+# README.md, and uv.lock. Excluding everything else keeps build
+# context transfer fast and prevents host-only artifacts (venvs,
+# editor state, the local cache) from leaking into the image layer.
+
+# Local virtualenvs (the Dockerfile builds a fresh one).
+.venv*
+
+# Tests, fixtures, scripts — runtime image doesn't need them.
+tests
+scripts
+references
+
+# CI + docs (not needed at runtime).
+.github
+docs
+spec
+.claude
+.skills-lock.json
+
+# Editor / OS noise.
+.git
+.gitignore
+.gitattributes
+.editorconfig
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Build artifacts + caches.
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+dist
+build
+
+# Secrets — never copy into the image layer.
+.env
+.env.*
+!.env.example
+
+# Compose files for the host sandbox — not for the runtime image.
+compose.claude.yml
+compose.mcp.yml

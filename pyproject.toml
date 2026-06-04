@@ -1,10 +1,10 @@
 [project]
 name = "whatcanirun"
-version = "0.0.1"
+version = "0.1.0"
 description = "MCP server: convert LLM inference budgets into ranked, source-backed plans"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Mahesh Babu Gorantla" },
 ]
@@ -90,9 +90,10 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-ra -q --strict-markers -m 'not network'"
+addopts = "-ra -q --strict-markers -m 'not network and not release'"
 markers = [
     "integration: tests that exercise the MCP tool surface end-to-end",
     "schema_evolution: tests that prove projection tolerates new upstream fields",
     "network: tests that make live HTTP requests; deselected by default (CI does not run them). Run locally with `pytest -m network` before releases.",
+    "release: tests that drive the installed `whatcanirun-mcp` binary over stdio with FastMCP Client; deselected by default. Run via `pytest -m release` or `scripts/install_host_uv.sh` as part of the M12 release gate.",
 ]
