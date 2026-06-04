@@ -87,6 +87,20 @@ Full per-client examples (Claude Desktop, Claude Code, Cursor,
 Cline), env-var passthrough caveats, and troubleshooting live in
 [`docs/MCP.md`](docs/MCP.md).
 
+## Validating a running install
+
+[`docs/SCENARIOS.md`](docs/SCENARIOS.md) carries eight prose-shape
+end-to-end scenarios you can walk through in chat to validate that a
+running install behaves as expected — not just that it responds, but
+that it relays the trust contract honestly (caveats verbatim,
+weakest-link confidence, no bluffing on `requires_measurement`). The
+scenarios cover the headline budget / fit / cost / compare questions
+plus the unknown-model + workload elicitation flows.
+
+The mechanical server-side gate is `pytest -m release`, which the
+host install script runs automatically; the scenarios layer on top to
+catch *client-side* relay regressions a server-only gate can't see.
+
 ## Data sources
 
 - **[ComputePrices](https://computeprices.com/)** — GPU rental + LLM API pricing across 70+ providers
