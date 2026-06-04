@@ -20,32 +20,35 @@
 # build toolchain in the published artifact.
 
 ARG PYTHON_TAG=3.12-slim
+ARG UV_TAG=0.11.16
 
 # ============ stage 1: build ============
 FROM python:${PYTHON_TAG} AS build
 
-# uv is pinned by the official installer-hosted release.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+# uv pinned via the official Astral image (avoids `curl | sh` at
+# build time and freezes the resolver version so the image stays
+# reproducible across rebuilds). Bump UV_TAG above when refreshing.
+COPY --from=ghcr.io/astral-sh/uv:${UV_TAG} /uv /uvx /usr/local/bin/
 
-ENV PATH="/root/.local/bin:${PATH}" \
-    UV_LINK_MODE=copy \
+ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
 
 WORKDIR /opt/whatcanirun
 
-# Copy lockfile + project metadata first so `uv sync` is cached
-# until pyproject.toml or uv.lock changes — without this, every
-# source edit invalidates the dep layer.
+# Layer 1: deps-only sync. Copying just pyproject + lockfile (NOT
+# src/seeds) means this layer is cached until either of those two
+# files change. `--no-install-project` defers installing the
+# whatcanirun package itself until after src is copied; that way a
+# src edit doesn't invalidate the deps layer.
 COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Layer 2: source + project install. Now that deps are baked into
+# the venv, copying src + seeds and re-running `uv sync` only
+# (re-)installs the whatcanirun package itself — fast, and the
+# expensive dep layer above stays cached across src edits.
 COPY src ./src
 COPY seeds ./seeds
-
-# --frozen pins to the committed lockfile so the published image
-# matches what the maintainer tested. --no-dev skips pytest/ruff/
-# mypy — the runtime image doesn't need them.
 RUN uv sync --frozen --no-dev
 
 
