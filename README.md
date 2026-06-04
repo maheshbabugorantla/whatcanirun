@@ -4,7 +4,7 @@ An MCP server that answers the one question every LLM inference user actually as
 
 > **"I have $X to spend on model Y — what can I actually run?"**
 
-Self-hosted, free public APIs only, ships as a stdio MCP server you install with one command. No accounts, no hosting, no telemetry.
+Self-hosted, free public APIs only, ships as a stdio MCP server you clone and run on your own host. No accounts, no hosting, no telemetry.
 
 ## What it does
 
@@ -14,9 +14,9 @@ Every response carries a structured `trust_envelope` — sources, per-domain con
 
 ## Status
 
-⬜ Pre-alpha. **10 of 13 v1 milestones complete** (M00 bootstrap through M09 MCP server). M10 (benchmark seeds from public sources), M11 (tests + golden-path + docs), and M12 (release / `uvx`-installable distribution) remain before v1 ships.
+⬜ v0.1.0 in flight. **12 of 13 v1 milestones complete** (M00 bootstrap through M11 docs sweep, with M10 partially shipped — Tier 1b public-benchmark cells removed from v1 after the source landscape proved infeasible; see [`spec/INDEX.md`](spec/INDEX.md) footnote). M12 (clone-install release) is the last milestone before v1 ships; PyPI publication and MCP-registry submissions are deferred to v2 once the tool surface stabilizes through real usage.
 
-See [`spec/INDEX.md`](spec/INDEX.md) for the milestone roadmap.
+See [`spec/INDEX.md`](spec/INDEX.md) for the milestone roadmap and [`spec/M12-release.md`](spec/M12-release.md) § "Deferred to v2" for the PyPI deferral rationale.
 
 ## What's wired today
 
@@ -40,13 +40,52 @@ M09 landed the full MCP surface — the stdio server is callable end-to-end agai
 
 - `/benchmark-on-budget` — guided template for the most common "I have $X" question.
 
-## Quickstart (post-v1)
+## Install
+
+v1 ships as a clone-install repo for power users. Two paths,
+identical MCP surface — pick the one that matches what's already
+on your host.
+
+### Host-uv (recommended)
+
+Requires Python 3.12 + [`uv`](https://docs.astral.sh/uv/) on the host.
 
 ```bash
-uvx whatcanirun-mcp
+git clone https://github.com/maheshbabugorantla/whatcanirun
+cd whatcanirun
+./scripts/install_host_uv.sh
 ```
 
-`uvx`-installable distribution lands in M12; until then, the server runs from a source checkout via `uv run whatcanirun-mcp`. Per-client configuration blocks (Claude Desktop, Claude Code, Cursor, Cline) will be drafted in [`docs/MCP.md`](docs/MCP.md) as part of M11.
+The install script runs `uv sync`, warms the upstream caches via
+`whatcanirun-mcp prefetch`, runs the release-gate stdio test, and
+prints the MCP client config block users paste into their client
+(Claude Desktop / Claude Code / Cursor / Cline) — with the
+absolute repo path already substituted.
+
+### Docker
+
+Requires `docker`. The image entry point is the stdio MCP server.
+
+```bash
+git clone https://github.com/maheshbabugorantla/whatcanirun
+cd whatcanirun
+docker build -t whatcanirun:latest .
+# Optional one-shot cache warmup on the named volume:
+docker run --rm -i \
+  -v whatcanirun-cache:/var/cache/whatcanirun \
+  whatcanirun:latest prefetch
+```
+
+Point the MCP client at `scripts/run_mcp_docker.sh` — the
+wrapper handles `-i`, `--rm`, the named cache volume, and env-var
+passthrough so the client config block stays a single-line
+`command` field.
+
+### Per-client configuration
+
+Full per-client examples (Claude Desktop, Claude Code, Cursor,
+Cline), env-var passthrough caveats, and troubleshooting live in
+[`docs/MCP.md`](docs/MCP.md).
 
 ## Data sources
 
@@ -58,4 +97,6 @@ Attribution and license respect for upstream sources lives in [`docs/TRUST.md`](
 
 ## License
 
-MIT (TBD — see open decisions in spec/SHARED.md)
+MIT — declared in `pyproject.toml`. The benchmark *dataset*
+(published as Parquet on Hugging Face Datasets, post-v2 M17)
+ships under CC-BY-4.0 per [ADR-006](docs/ADRs/ADR-006-benchmark-cells-parquet.md).
