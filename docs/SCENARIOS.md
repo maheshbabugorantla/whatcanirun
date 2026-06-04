@@ -53,7 +53,7 @@ follow up by asking you to pick one (Scenario 6 covers this branch).
 - [ ] Each row mentions `est_total_prompts` (always populated).
       Rental rows additionally surface `hours_available` and
       `est_wallclock_minutes`; for hosted-API rows BOTH are `None`
-      by design (per `budget_to_plan.py:96-105`: no hourly_usd
+      by design (per `src/whatcanirun/mcp_tools/budget_to_plan.py:96-105`: no hourly_usd
       because the provider runs the inference, and decode_tps is
       None for the row's perspective), so when a hosted row tops
       the ranking, Claude should name only `est_total_prompts` for
@@ -138,7 +138,7 @@ context_length=8192)`.
       and 24h) is NOT currently applied to CostCell envelopes —
       `_partial_envelope_for_gpu_rental` and
       `_partial_envelope_for_hosted_api` in
-      `plan/cost_cells.py:520-547` hard-code
+      `src/whatcanirun/plan/cost_cells.py:520-547` hard-code
       `confidence_breakdown["freshness"] = 0.8` regardless of the
       cache's actual age. So Claude has the raw timestamp to relay
       but no auto-decayed confidence value to anchor it on. A v2
@@ -167,7 +167,7 @@ context_length=4096, workload_profile_slug="chat_assistant")`.
       always `None` from this tool. `compare_deployment_modes` passes
       `gpu_slug` + `quant_slug` to `query_cost_cells`, which triggers
       the `hosted_filtered_out` branch in
-      `plan/cost_cells.py:289-292` (hosted-API rows have no GPU/quant
+      `src/whatcanirun/plan/cost_cells.py:289-292` (hosted-API rows have no GPU/quant
       to match) and skips the hosted side entirely. So in practice
       this scenario validates the rental row + verdict only;
       cross-mode comparison routes through `find_cheapest_deployment`
@@ -179,7 +179,7 @@ context_length=4096, workload_profile_slug="chat_assistant")`.
       the answer; the tool does NOT compute a volume-threshold
       break-even, so don't look for one. Note: because of the
       always-None hosted side above, the verdict today is always
-      `unknown` per `_verdict` in compare_deployment.py:79-91 (one
+      `unknown` per `_verdict` in `src/whatcanirun/mcp_tools/compare_deployment.py:79-91` (one
       side missing → unknown); Claude should surface that honestly
       rather than guess
 - [ ] `workload_assumption` PRESENT in the response's envelope's
@@ -200,7 +200,7 @@ might be `hermes-2-pro-mistral`, `hermes-2-pro-mistral-7b`,
 `nous-hermes-2`, etc.; different clients pick different slugs) →
 server returns `UnknownModelResponse` echoing
 `requested_model_slug` verbatim (no canonicalization happens; see
-`dispatch.py:68`) → Claude asks you for the HF repo_id (if not
+`src/whatcanirun/mcp_tools/dispatch.py:68`) → Claude asks you for the HF repo_id (if not
 already in the question) → calls
 `resolve_model(model_slug=<the same slug the client originally tried>,
 hf_repo_id="NousResearch/Hermes-2-Pro-Mistral-7B")` → retries
