@@ -188,7 +188,7 @@ context_length=4096, workload_profile_slug="chat_assistant")`.
 
 ---
 
-## Scenario 5 — Unknown-model elicitation (Case 1: model not tracked)
+## Scenario 5 — Unknown-model elicitation
 
 **Question to ask:**
 
@@ -224,7 +224,7 @@ not "the server suggests a canonical slug".
 
 ---
 
-## Scenario 6 — Workload elicitation (Case 2: no workload profile)
+## Scenario 6 — Workload-profile elicitation
 
 **Question to ask:**
 
