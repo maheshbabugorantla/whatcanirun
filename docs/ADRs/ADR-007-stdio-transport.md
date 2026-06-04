@@ -29,8 +29,11 @@ Re-evaluate in 6 months.
 - No HTTP server in v1. No FastAPI, no uvicorn, no port
   management.
 - The stdio entry point (`whatcanirun-mcp = "whatcanirun.server:main"`)
-  is the single distribution surface — `uvx whatcanirun-mcp` and
-  done.
+  is the single distribution surface. v1 ships as a clone-install
+  repo (host-uv + Docker — see [`../MCP.md`](../MCP.md)); PyPI
+  publication is deferred to v2 so the API and trust-envelope
+  shape can churn through real usage before an artifact pins
+  them (M12 § Deferred to v2).
 - No auth code in v1. No tokens to manage, leak, or rotate.
 - v2 adds a bearer-token-protected HTTP transport alongside (not
   replacing) stdio. ADR-012 covers the auth flow.

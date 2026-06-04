@@ -212,7 +212,7 @@ Confirmed live as of 25 May 2026:
 ## Effort estimate
 
 - **v1 implementation-only:** ~54h
-- **v1 ship-ready** (with debugging, docs, clean-machine `uvx` testing, broken-slug edge cases, flaky upstream responses, benchmark-source validation, golden-path hardening): **~75–110h**
+- **v1 ship-ready** (with debugging, docs, clone-install testing on a fresh host, broken-slug edge cases, flaky upstream responses, benchmark-source validation, golden-path hardening): **~75–110h**
 
 Plan for the upper bound. Pick the lower bound only if you're full-time for a week.
 
