@@ -117,7 +117,7 @@ PRD:
 | M09 | MCP server | ✓ |
 | M10 | Benchmark seeds (public sources) | ✓ (partial — see below) |
 | M11 | Tests + golden-path + docs | ✓ |
-| M12 | Release (clone-install) | in flight |
+| M12 | Release (clone-install) | ✓ |
 
 ### M10 partial-ship note
 

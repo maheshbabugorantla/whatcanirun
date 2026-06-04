@@ -22,7 +22,7 @@ Critical path = 8 weekends at ~6h each (~54h implementation-only). Plan for **75
 | M09 | [MCP server](M09-mcp-server.md) | 10h | ✓ | ✓ |
 | M10 | [Benchmark seeds (public sources)](M10-benchmark-seeds.md) | 6h | parallel | ✓ ¹ |
 | M11 | [Tests + golden-path + docs](M11-tests-docs.md) | 6h | ✓ | ✓ |
-| M12 | [Release (clone-install)](M12-release.md) | 3h | ✓ | ⬜ |
+| M12 | [Release (clone-install)](M12-release.md) | 3h | ✓ | ✓ |
 | **Total** | | **~54h impl / 75–110h ship-ready** | | |
 
 ¹ M10 partially shipped — verification tooling + gpu_catalog snapshot landed in PR-α (PR #17, squash `33ce718`), but Tier 1b public_benchmark_anchor cell curation was deferred to v2's M17 after the public benchmark source landscape proved infeasible for the cell shape this spec required. Public benchmark blogs don't publish steady-state per-stream decode-TPS (they publish aggregate-throughput-at-concurrency), source URLs rot fast (Spheron's M10-cited article 404s; replacement-article numbers fail bandwidth physics), and even paid first-principles sources (Kiely 2026 *Inference Engineering*) teach the bandwidth-heuristic methodology rather than publishing measured numbers. See `spec/M10-benchmark-seeds.md` preamble for the full rationale. v1's confidence ceiling is Tier 2 (AA provider_anchor, 0.7) for AA-tracked models and Tier 3 (bandwidth_heuristic, 0.6) otherwise; trust contract preserved by honest confidence reporting.
