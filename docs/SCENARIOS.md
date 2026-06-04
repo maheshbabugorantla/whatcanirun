@@ -9,7 +9,7 @@ that it relays the trust contract honestly.
 > you what to ask, what tool path Claude should walk, and what to
 > check in the response. The release-gate test (`pytest -m release`)
 > verifies the server side of every contract; these scenarios verify
-> the *client-side* behaviour the server's `INSTRUCTIONS` string is
+> the *client-side* behavior the server's `INSTRUCTIONS` string is
 > designed to elicit. If a scenario fails because the client
 > paraphrased a caveat or hid a confidence value, that's a real bug
 > worth filing — the server cannot make the LLM client behave; it can
@@ -112,9 +112,12 @@ context_length=8192)`.
 - [ ] If any row has `pricing_type=spot`, Claude mentions preemption
       risk per `INSTRUCTIONS` rule 4
 - [ ] Claude names the freshness of CP pricing — `freshness.
-      computeprices` is on every envelope. If CP hasn't refreshed in
-      6h+, the freshness confidence domain decays and that should
-      surface as "prices may be stale" in Claude's relay
+      computeprices` is on every envelope. Decay breakpoints are 2h
+      (0.95 → 0.75) and 24h (0.75 → 0.40) per
+      `freshness_confidence("computeprices", age)` in
+      `src/whatcanirun/trust/calibration.py`. Crossing either
+      breakpoint should surface as "prices may be stale" in Claude's
+      relay
 
 ---
 
