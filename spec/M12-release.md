@@ -12,8 +12,9 @@
 ## Goal
 
 `git clone && uv run whatcanirun-mcp` (host-uv path) — or
-`docker build && docker run --rm -i whatcanirun-mcp` (Docker path)
-— produces a working stdio MCP server that power users can wire
+`docker build -t whatcanirun:latest . && docker run --rm -i
+whatcanirun:latest` (Docker path) — produces a working stdio MCP
+server that power users can wire
 into their MCP client config. A scripted FastMCP `Client` over
 `StdioTransport` exercises every tool, resource, and prompt and
 audits the trust-envelope invariants on the response shapes.

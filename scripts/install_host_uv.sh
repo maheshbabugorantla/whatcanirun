@@ -69,8 +69,12 @@ EOF
     exit 1
 fi
 
-echo "==> uv sync"
-uv sync
+echo "==> uv sync (with --extra dev so pytest is on PATH for the release gate)"
+# `dev` is a PEP 621 [project.optional-dependencies] group, not a
+# uv-native dev-dependencies block. `uv sync` without --extra dev
+# would skip it, and the release-gate step below would fail with
+# "pytest: command not found".
+uv sync --extra dev
 
 if [[ "$PREFETCH" -eq 1 ]]; then
     echo "==> warming CP + HF caches (this is the slow first run)"
@@ -81,21 +85,14 @@ fi
 
 if [[ "$RUN_TEST" -eq 1 ]]; then
     echo "==> release-gate test (pytest -m release)"
-    # Exit code 5 means pytest collected no tests matching the marker.
-    # That's OK during M12 development before Slice C lands the gate
-    # test; after merge there is always at least one release-marked
-    # test, so a 5 then means a regression worth surfacing.
-    set +e
+    # `pytest -m release` should always collect at least one test
+    # — `tests/release/test_stdio_install.py` is in the repo and
+    # the `release` marker is registered in pyproject.toml. Exit
+    # code 5 (no tests collected) used to be tolerated during M12
+    # development before Slice C landed; now it signals a real
+    # regression in marker registration or test discovery and we
+    # fail loud so a clean install can't ship a broken gate.
     uv run pytest -m release -q
-    test_rc=$?
-    set -e
-    if [[ $test_rc -ne 0 && $test_rc -ne 5 ]]; then
-        echo "install_host_uv.sh: release-gate test failed (pytest exit $test_rc)" >&2
-        exit $test_rc
-    fi
-    if [[ $test_rc -eq 5 ]]; then
-        echo "    (no release-marked tests collected; skipping)"
-    fi
 else
     echo "==> skipping release-gate test (--no-test)"
 fi
