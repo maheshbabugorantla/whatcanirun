@@ -64,6 +64,19 @@ _LOG = logging.getLogger(__name__)
 # 2-3.
 _MAX_TURNS = 8
 
+# Defense-in-depth allowlist for `read_mcp_resource` pseudo-tool.
+# The Anthropic API does NOT strictly enforce JSON-Schema `enum`
+# constraints on tool inputs at runtime — the LLM is expected to
+# follow them but may deviate (hallucination, prompt injection,
+# etc.). Without a runtime check, a stray `uri` would be forwarded
+# straight to `client.read_resource()`, potentially returning a
+# different resource (e.g. `cost-cells://current` is a real
+# Parquet resource on this server) that contradicts the schema's
+# stated safety property. The allowlist is the single source of
+# truth: the schema's `enum` and the dispatch validation both
+# derive from it.
+_RESOURCE_URI_ALLOWLIST = frozenset({"cost-cells://provenance"})
+
 # Per-call token budget. Claude's tool-call responses are short
 # (~100-300 tokens of natural language + tool_use blocks), but the
 # final relay can be longer when Claude restates a multi-row plan.
@@ -158,7 +171,7 @@ async def list_anthropic_tools(client: Client[Any]) -> list[dict[str, Any]]:
                 "properties": {
                     "uri": {
                         "type": "string",
-                        "enum": ["cost-cells://provenance"],
+                        "enum": sorted(_RESOURCE_URI_ALLOWLIST),
                         "description": "MCP resource URI to read.",
                     },
                 },
@@ -186,6 +199,16 @@ async def _dispatch_tool_call(
     """
     if tool_name == "read_mcp_resource":
         uri = tool_input["uri"]
+        # Runtime allowlist check. The schema's `enum` is best-effort
+        # at the LLM layer; defense in depth requires re-checking at
+        # the dispatch site so a hallucinated or prompt-injected URI
+        # can't bypass to e.g. `cost-cells://current` (Parquet binary
+        # on this server). Raises ValueError so the outer try/except
+        # surfaces a structured error to Claude.
+        if uri not in _RESOURCE_URI_ALLOWLIST:
+            raise ValueError(
+                f"read_mcp_resource: uri {uri!r} not in allowlist {sorted(_RESOURCE_URI_ALLOWLIST)}"
+            )
         contents = await client.read_resource(uri)
         # FastMCP returns a list of content entries; concatenate the
         # text bodies. Resources we expose are text/JSON, so this
@@ -276,6 +299,7 @@ async def run_scenario(
             tool_result_blocks: list[dict[str, Any]] = []
             for block in tool_use_blocks:
                 tool_input = dict(block.input) if isinstance(block.input, dict) else {}
+                call_raised = False
                 try:
                     result_payload = await _dispatch_tool_call(
                         fastmcp_client, block.name, tool_input
@@ -285,6 +309,7 @@ async def run_scenario(
                     # recover (e.g. retry with corrected args) rather
                     # than crashing the loop. The test still sees the
                     # call via `run.tool_calls`.
+                    call_raised = True
                     result_payload = {"error": f"{type(exc).__name__}: {exc}"}
                     _LOG.warning(
                         "scenario tool call failed: name=%s err=%s",
@@ -298,13 +323,22 @@ async def run_scenario(
                         result=result_payload,
                     )
                 )
-                tool_result_blocks.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": _stringify_for_claude(result_payload),
-                    }
-                )
+                # `is_error=True` on the tool_result block signals the
+                # failure to the model unambiguously per Anthropic's
+                # tool-use protocol. Without it, the `{"error": ...}`
+                # payload reads as a normal successful result whose
+                # value happens to mention an error — degrading
+                # Claude's ability to retry with corrected args (the
+                # exact behaviour the unknown-model + bad-arg
+                # recovery scenarios depend on).
+                result_block: dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": _stringify_for_claude(result_payload),
+                }
+                if call_raised:
+                    result_block["is_error"] = True
+                tool_result_blocks.append(result_block)
             # Cast: Anthropic SDK types `content` as
             # `str | Iterable[ContentBlockParam]`. tool_result_blocks
             # are dicts conforming to ToolResultBlockParam at runtime,
