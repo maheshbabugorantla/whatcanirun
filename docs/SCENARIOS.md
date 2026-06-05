@@ -5,15 +5,23 @@ client (Claude Desktop, Claude Code, Cursor, Cline) to validate that a
 running install behaves as expected — not just that it responds, but
 that it relays the trust contract honestly.
 
-> These scenarios are **prescriptive**, not test-validated. They tell
-> you what to ask, what tool path Claude should walk, and what to
-> check in the response. The release-gate test (`pytest -m release`)
-> verifies the server side of every contract; these scenarios verify
-> the *client-side* behavior the server's `INSTRUCTIONS` string is
-> designed to elicit. If a scenario fails because the client
-> paraphrased a caveat or hid a confidence value, that's a real bug
-> worth filing — the server cannot make the LLM client behave; it can
-> only give the client material to behave honestly with.
+> These scenarios are dual-purpose. The prose below is the **manual**
+> walkthrough you run against a real MCP client to confirm an install
+> behaves as expected. Each scenario also has a **programmatic
+> counterpart** in
+> [`tests/e2e/test_scenarios_claude_in_loop.py`](../tests/e2e/test_scenarios_claude_in_loop.py)
+> that drives the same question through an Anthropic Claude loop via
+> the FastMCP `Client` + Anthropic SDK and asserts the same contracts
+> mechanically. Run the programmatic suite via
+> [`scripts/run_e2e_scenarios.sh`](../scripts/run_e2e_scenarios.sh)
+> (requires `ANTHROPIC_API_KEY`; ~$0.05-$0.15 per scenario on Sonnet).
+> The release-gate test (`pytest -m release`) verifies the server
+> side of every contract; the e2e harness verifies the *client-side*
+> relay the server's `INSTRUCTIONS` string is designed to elicit. If
+> a scenario fails because the client paraphrased a caveat or hid a
+> confidence value, that's a real bug worth filing — the server
+> cannot make the LLM client behave; it can only give the client
+> material to behave honestly with.
 
 ## How to use this doc
 
@@ -373,3 +381,8 @@ budget question that should have routed to `budget_to_plan`):
   problem it solves)
 - [`tests/release/test_stdio_install.py`](../tests/release/test_stdio_install.py)
   — the mechanical server-side gate these scenarios layer on top of
+- [`tests/e2e/test_scenarios_claude_in_loop.py`](../tests/e2e/test_scenarios_claude_in_loop.py)
+  — programmatic counterpart: one Claude-in-the-loop test per
+  scenario, asserting the same tool path / envelope shape / final-
+  reply contract this doc walks the user through by hand. Run via
+  [`scripts/run_e2e_scenarios.sh`](../scripts/run_e2e_scenarios.sh).
