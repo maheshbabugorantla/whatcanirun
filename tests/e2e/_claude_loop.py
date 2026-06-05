@@ -40,6 +40,21 @@ from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
 from fastmcp import Client
 
+# Pull the server's `instructions` string from source. The whole
+# point of this harness is to verify the LLM client follows that
+# string's relay rules (workload-assumption surfacing, refusal
+# honesty, etc.); not passing it would test Claude's default
+# behaviour given only tool descriptions, which is a weaker
+# contract than the one spec/M09 promises. Importing from source
+# keeps the harness aligned with whatever string the server
+# actually ships at this branch — no drift risk.
+# `whatcanirun` lacks a py.typed marker, so mypy treats first-
+# party imports from src/ as untyped when checked outside the
+# project gate (pre-commit only runs mypy on `^src/`). The
+# inline ignore keeps `mypy tests/e2e/` clean for local runs
+# without claiming to add PEP 561 packaging on this PR.
+from whatcanirun.server import INSTRUCTIONS as _SERVER_INSTRUCTIONS  # type: ignore[import-untyped]
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -229,8 +244,14 @@ async def run_scenario(
         "tools": tools,
         "messages": messages,
     }
-    if system:
-        create_kwargs["system"] = system
+    # Default the system prompt to the server's `INSTRUCTIONS`
+    # string. A real MCP client (Claude Desktop, Claude Code) reads
+    # this on `initialize` and surfaces it to the model; the
+    # Anthropic SDK has no equivalent auto-pickup, so the harness
+    # must inject it explicitly. An explicit caller-supplied
+    # `system` overrides (e.g. for negative tests asserting that
+    # the relay falls back to honest defaults without instructions).
+    create_kwargs["system"] = system if system is not None else _SERVER_INSTRUCTIONS
 
     for turn in range(_MAX_TURNS):
         run.turns = turn + 1

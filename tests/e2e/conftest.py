@@ -20,6 +20,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+# Skip the entire `tests/e2e/` collection when the anthropic SDK is
+# not installed (i.e. the `e2e` optional-deps group hasn't been
+# synced). pytest still imports conftest.py during collection even
+# when `-m '... and not e2e'` deselects the tests themselves, so an
+# unconditional `from anthropic import ...` would crash the default
+# `pytest -q` workflow for contributors on `uv sync --extra dev`
+# alone. `importorskip` at module top defers the import to a check
+# that pytest treats as a skip-the-whole-module signal.
+pytest.importorskip(
+    "anthropic",
+    reason="install with `uv sync --extra e2e` to run the Claude-in-the-loop harness",
+)
+
 import pytest_asyncio
 from anthropic import AsyncAnthropic
 from fastmcp import Client

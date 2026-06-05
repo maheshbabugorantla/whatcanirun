@@ -19,6 +19,7 @@ Marked `@pytest.mark.e2e` and skipped by default. See
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 from typing import Any
 
@@ -47,7 +48,19 @@ def _assert_envelope(envelope: dict[str, Any]) -> None:
         f"weakest-link rule violated: confidence={confidence} min(breakdown)={expected}"
     )
     assert envelope.get("verify_links"), "envelope.verify_links missing or empty"
-    assert envelope.get("freshness"), "envelope.freshness missing or empty"
+    freshness = envelope.get("freshness")
+    assert isinstance(freshness, dict) and freshness, "envelope.freshness missing or empty"
+    # Mirror the release-gate parser: every freshness entry must be
+    # a parseable ISO-8601 datetime. A bare truthy check (the
+    # original) would let a malformed timestamp slip past, which is
+    # the relay-regression class this harness exists to catch.
+    for source_name, ts in freshness.items():
+        try:
+            dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise AssertionError(
+                f"envelope.freshness[{source_name!r}] = {ts!r} is not ISO-8601"
+            ) from exc
 
 
 def _find_envelope_in(result: Any) -> dict[str, Any] | None:
@@ -187,13 +200,22 @@ async def test_scenario_2_fit_check_wont_fit(
     assert "workload_assumption" not in envelope.get("confidence_breakdown", {}), (
         "fit_check envelope must not carry workload_assumption (omit-when-not-synthesized rule)"
     )
-    # Verify fit_result.fits == False in the actual response.
-    if isinstance(fit_call.result, dict):
-        fit_result = fit_call.result.get("fit_result", {})
-        if isinstance(fit_result, dict):
-            assert fit_result.get("fits") is False, (
-                f"expected fits=False; got fit_result={fit_result}"
-            )
+    # Verify fit_result.fits == False unconditionally. The previous
+    # version guarded both isinstance checks, which would silently
+    # pass when the response shape regressed (e.g. fit_result
+    # missing or returned as something other than a dict). Scenario
+    # 2's whole point is catching a fits=True relay where fits=False
+    # is correct — make the shape assertion loud.
+    assert isinstance(fit_call.result, dict), (
+        f"fit_check result not a dict: {type(fit_call.result).__name__} {fit_call.result!r}"
+    )
+    fit_result = fit_call.result.get("fit_result")
+    assert isinstance(fit_result, dict), (
+        f"fit_check response missing fit_result dict: {fit_call.result!r}"
+    )
+    assert fit_result.get("fits") is False, (
+        f"expected fits=False (Mixtral 8x22B fp16 doesn't fit in 80GB); got fit_result={fit_result}"
+    )
     # Soft keyword: any honest paraphrase of "no".
     text = run.final_text.lower()
     assert any(s in text for s in ("doesn't fit", "won't fit", "not fit", "insufficient")), (
