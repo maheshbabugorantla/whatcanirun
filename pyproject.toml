@@ -107,5 +107,5 @@ markers = [
     "schema_evolution: tests that prove projection tolerates new upstream fields",
     "network: tests that make live HTTP requests; deselected by default (CI does not run them). Run locally with `pytest -m network` before releases.",
     "release: tests that drive the installed `whatcanirun-mcp` binary over stdio with FastMCP Client; deselected by default. Run via `pytest -m release` or `scripts/install_host_uv.sh` as part of the M12 release gate.",
-    "e2e: Claude-in-the-loop scenario tests that drive the MCP server through the Claude Agent SDK over real stdio; deselected by default. Require `ANTHROPIC_API_KEY` + the `e2e` optional-deps group. Each scenario consumes Agent SDK credits (Pro/Max plan) or pay-as-you-go API balance. Run via `pytest -m e2e` or `scripts/run_e2e_scenarios.sh`.",
+    "e2e: Claude-in-the-loop scenario tests that drive the MCP server through the Claude Agent SDK over real stdio; deselected by default. Require the `e2e` optional-deps group + EITHER `ANTHROPIC_API_KEY` (pay-as-you-go API balance) OR a logged-in Claude Code session (Pro/Max plan Agent SDK credit pool). Run via `pytest -m e2e` or `scripts/run_e2e_scenarios.sh`.",
 ]
