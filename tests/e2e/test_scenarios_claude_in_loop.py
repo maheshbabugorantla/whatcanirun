@@ -65,7 +65,16 @@ def _strip_markdown(text: str) -> str:
 # `_assert_envelope` helper but reused here to assert against
 # whatever envelopes Claude saw in its tool_result blocks.
 def _assert_envelope(envelope: dict[str, Any]) -> None:
-    assert envelope.get("sources"), "envelope.sources missing or empty"
+    sources = envelope.get("sources")
+    # The canonical schema (`src/whatcanirun/trust/envelope.py:82`)
+    # declares `sources: list[Source]`. A truthy check alone would
+    # silently accept a non-empty dict or scalar after a schema
+    # regression — match the type explicitly so the harness catches
+    # shape changes the release-gate test would also catch.
+    assert isinstance(sources, list) and sources, (
+        f"envelope.sources must be a non-empty list; "
+        f"got type={type(sources).__name__} value={sources!r}"
+    )
     breakdown = envelope.get("confidence_breakdown")
     assert isinstance(breakdown, dict) and breakdown, "confidence_breakdown empty"
     confidence = envelope.get("confidence")
