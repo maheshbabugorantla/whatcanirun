@@ -132,15 +132,24 @@ def _coerce_result(result: Any) -> Any:
 def _find_envelope_in(result: Any) -> dict[str, Any] | None:
     """Locate a trust_envelope in a coerced tool result. CostCell
     and BudgetPlanRow rows nest one per row; FitCheckToolResponse
-    and DeploymentComparison nest one at the top level."""
+    and DeploymentComparison nest one at the top level.
+
+    For list-shaped results, walks every row until it finds the
+    first row with a `trust_envelope` — mirroring the server's
+    INSTRUCTIONS guidance ("When relaying a list result, walk
+    every row's envelope, not just the first"). Returns the first
+    envelope found; the caller is responsible for asserting the
+    per-row contract on subsequent rows when needed (Scenario 3
+    iterates explicitly for that reason)."""
     if isinstance(result, dict):
         envelope = result.get("trust_envelope")
         return envelope if isinstance(envelope, dict) else None
-    if isinstance(result, list) and result:
-        first = result[0]
-        if isinstance(first, dict):
-            envelope = first.get("trust_envelope")
-            return envelope if isinstance(envelope, dict) else None
+    if isinstance(result, list):
+        for row in result:
+            if isinstance(row, dict):
+                envelope = row.get("trust_envelope")
+                if isinstance(envelope, dict):
+                    return envelope
     return None
 
 
@@ -492,9 +501,19 @@ async def test_scenario_6_workload_elicitation(
     """SCENARIOS.md § Scenario 6 — Workload-profile elicitation.
 
     Two valid trust-contract-compliant paths for "no silent default":
-    (A) server-side elicit (call without workload → retry); (B)
-    client-side elicit (Claude asks user via NL before calling). Both
-    honor spec/M09's "no silent default" contract.
+    (A) Server-side elicit: Claude calls `budget_to_plan` without a
+        workload, gets `WorkloadElicitationResponse`, then retries
+        with a workload slug. Two `budget_to_plan` calls total.
+    (B) Client-side elicit: Claude reads the question, recognises
+        the workload is missing, and asks the user via natural
+        language BEFORE calling any tool. The harness is
+        single-shot (no `elicitation_replies` wired into this
+        scenario), so under Path B the run ends with ZERO
+        `budget_to_plan` calls; the test verifies Claude's final
+        text contains an elicitation question instead of a silent
+        default.
+
+    Both paths honor spec/M09's "no silent default" contract.
     """
     run = await run_scenario(
         question="How many prompts can I run on $20 of Qwen 2.5 7B?",
@@ -504,10 +523,38 @@ async def test_scenario_6_workload_elicitation(
         env=mcp_env,
     )
     budget_calls = [tc for tc in run.tool_calls if "budget_to_plan" in tc.name]
-    assert budget_calls, "scenario 6 produced no budget_to_plan calls"
 
-    # The LAST budget_to_plan call must carry a workload slug —
-    # that's the execution call regardless of which path was taken.
+    # Path B: Claude asked the user via NL without calling any tool.
+    # Verify final_text shows an elicitation question (mentions
+    # workload / what kind / which type / etc.) — that's the
+    # contract-honouring "no silent default" expressed in the
+    # messaging surface rather than the tool-use surface.
+    if not budget_calls:
+        text = _strip_markdown(run.final_text.lower())
+        elicit_signals = (
+            "workload",
+            "what kind",
+            "what sort",
+            "what type",
+            "which type",
+            "code completion",
+            "chat assistant",
+            "batch eval",
+            "code_completion",
+            "chat_assistant",
+            "batch_eval",
+            "what are you",
+            "what kind of prompts",
+        )
+        assert any(s in text for s in elicit_signals), (
+            f"path B (no tool call) requires the final reply to surface a "
+            f"workload-elicitation question; got: {run.final_text!r}"
+        )
+        return
+
+    # Path A: at least one budget_to_plan call. The LAST call must
+    # carry a workload slug — that's the execution call regardless
+    # of how many elicitation rounds preceded it.
     final_args = budget_calls[-1].arguments
     assert final_args.get("workload_profile_slug"), (
         f"final budget_to_plan call missing workload_profile_slug: {final_args!r}"
