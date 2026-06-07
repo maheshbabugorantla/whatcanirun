@@ -311,12 +311,20 @@ async def test_scenario_3_find_cheapest(
     cheapest_call = run.first_call_to("find_cheapest_deployment")
     assert cheapest_call is not None
     result = _coerce_result(cheapest_call.result)
-    if isinstance(result, list) and result:
-        for row in result:
-            assert isinstance(row, dict), f"row not dict: {row!r}"
-            envelope = row.get("trust_envelope")
-            assert envelope, "find_cheapest_deployment row missing trust_envelope"
-            _assert_envelope(envelope)
+    # The contract: `find_cheapest_deployment` returns a `list[CostCell]`.
+    # An empty list is acceptable (cold-cache CP outage) but anything
+    # OTHER than a list is a real shape regression that must fail loud
+    # — silent-pass on an error dict (the previous behaviour) would
+    # defeat the per-row envelope contract this test exists to defend.
+    assert isinstance(result, list), (
+        f"find_cheapest_deployment must return a list (per spec/M08); "
+        f"got {type(result).__name__}: {result!r}"
+    )
+    for row in result:
+        assert isinstance(row, dict), f"row not dict: {row!r}"
+        envelope = row.get("trust_envelope")
+        assert envelope, "find_cheapest_deployment row missing trust_envelope"
+        _assert_envelope(envelope)
     assert "qwen" in _strip_markdown(run.final_text.lower()), (
         f"final reply did not name the requested model: {run.final_text!r}"
     )
@@ -417,11 +425,16 @@ async def test_scenario_5_unknown_model_elicitation(
     assert "fit_check" in names or "resolve_model" in names, (
         f"expected fit_check or resolve_model; got {names}"
     )
+
+    # Branch A: fit_check fired and returned UnknownModelResponse →
+    # verify the slug echo contract + that Claude followed up with
+    # resolve_model.
+    branch_asserted = False
     first_fit = run.first_call_to("fit_check")
     if first_fit is not None:
-        result = _coerce_result(first_fit.result)
-        if isinstance(result, dict) and result.get("status") == "unknown_model":
-            echoed = result.get("requested_model_slug")
+        fit_result = _coerce_result(first_fit.result)
+        if isinstance(fit_result, dict) and fit_result.get("status") == "unknown_model":
+            echoed = fit_result.get("requested_model_slug")
             sent = first_fit.arguments.get("model_slug")
             assert echoed == sent, (
                 f"UnknownModelResponse.requested_model_slug echo broken: "
@@ -430,6 +443,43 @@ async def test_scenario_5_unknown_model_elicitation(
             assert "resolve_model" in names, (
                 "unknown-model branch fired but Claude did not call resolve_model"
             )
+            branch_asserted = True
+
+    # Branch B: Claude routed directly to resolve_model (or got there
+    # via fit_check's hint). Validate the resolve_model contract:
+    # status must be one of the documented Literals; slug+repo_id are
+    # echoed back so the client can confirm what got persisted.
+    resolve_call = run.first_call_to("resolve_model")
+    if resolve_call is not None:
+        resolve_result = _coerce_result(resolve_call.result)
+        assert isinstance(resolve_result, dict), (
+            f"resolve_model result not a dict: {resolve_result!r}"
+        )
+        status = resolve_result.get("status")
+        assert status in {"resolved", "sync_failed", "not_found_on_hf"}, (
+            f"resolve_model returned unexpected status {status!r}; "
+            f"contract requires one of "
+            f"resolved | sync_failed | not_found_on_hf"
+        )
+        # The resolve_model echo contract: input slug + repo_id surface
+        # in the response so the client can verify what got persisted.
+        sent_slug = resolve_call.arguments.get("model_slug")
+        sent_repo = resolve_call.arguments.get("hf_repo_id")
+        assert resolve_result.get("model_slug") == sent_slug, (
+            f"resolve_model.model_slug echo broken: "
+            f"sent={sent_slug!r} got={resolve_result.get('model_slug')!r}"
+        )
+        assert resolve_result.get("hf_repo_id") == sent_repo, (
+            f"resolve_model.hf_repo_id echo broken: "
+            f"sent={sent_repo!r} got={resolve_result.get('hf_repo_id')!r}"
+        )
+        branch_asserted = True
+
+    assert branch_asserted, (
+        "scenario 5 produced neither an unknown-model fit_check nor a "
+        f"resolve_model call worth asserting on; tool_names={names}, "
+        f"first_fit_result={_coerce_result(first_fit.result) if first_fit else 'n/a'!r}"
+    )
 
 
 async def test_scenario_6_workload_elicitation(

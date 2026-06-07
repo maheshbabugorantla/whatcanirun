@@ -89,36 +89,32 @@ fi
 
 # Auth gate: accept EITHER an explicit ANTHROPIC_API_KEY OR a
 # logged-in Claude Code session. We can't directly verify
-# subscription auth from a shell — `claude /status` would, but
-# parsing its output is brittle. Instead, surface both paths in
-# the help text and trust the user.
+# subscription auth from a shell — `claude /status` is an
+# in-session command, not a CLI argument, and parsing its
+# output is brittle. Instead, surface both paths and let the
+# Agent SDK fail loudly if neither auth source resolves at
+# query() time.
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
     cat >&2 <<'EOF'
-run_e2e_scenarios.sh: ANTHROPIC_API_KEY is not set.
+run_e2e_scenarios.sh: ANTHROPIC_API_KEY is not set — proceeding
+with Claude Code subscription auth (Pro/Max plan Agent SDK
+credit pool).
 
-The Claude Agent SDK supports two auth paths:
+If your Claude Code installation is NOT logged in, the harness
+will fail at query() time with a CLI auth error. To opt back
+into the explicit API-key path:
 
-  (a) Set an explicit API key (pay-as-you-go API balance):
-
-        export ANTHROPIC_API_KEY=sk-ant-...
-        ./scripts/run_e2e_scenarios.sh
-
-  (b) Use your Claude Code subscription session (Pro/Max plan
-      Agent SDK credit pool). Verify Claude Code is logged in:
-
-        claude /status
-
-      If it reports a logged-in session, re-run THIS script
-      without ANTHROPIC_API_KEY set — the Agent SDK will pick
-      up the session automatically.
+    export ANTHROPIC_API_KEY=sk-ant-...
+    ./scripts/run_e2e_scenarios.sh
 
 Either path costs roughly $0.05-$0.15 per scenario on Sonnet;
-the full 8-scenario suite is under $2 per run. To run the
-server-side gate WITHOUT spending tokens:
+the full suite is under $2 per run. To run the server-side
+gate WITHOUT spending tokens:
 
     uv run pytest -m release
 EOF
-    exit 1
+    # Intentional: no exit. The harness proceeds with whatever
+    # auth the Agent SDK picks up from the local `claude` CLI.
 fi
 
 # Make sure both extras are installed. `uv sync --extra dev
