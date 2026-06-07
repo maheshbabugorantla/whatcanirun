@@ -33,18 +33,31 @@ pytestmark = pytest.mark.e2e
 
 
 # Markdown formatting characters Claude tends to inject into final
-# replies (bold `**`, italic `*` / `_`, strikethrough `~~`). Strip
-# before soft-keyword checks so a phrase like "does **not** fit"
-# matches the substring "not fit" — without stripping, the `**`
-# between "not" and "fit" defeats the substring check entirely.
-_MARKDOWN_CHARS = re.compile(r"[*_~`]+")
+# replies (bold `**`, italic `*`, strikethrough `~~`, inline code
+# `` ` ``). Strip before soft-keyword checks so a phrase like
+# "does **not** fit" matches the substring "not fit" — without
+# stripping, the `**` between "not" and "fit" defeats the substring
+# check entirely.
+#
+# DELIBERATELY excludes underscore `_`: it's a markdown italic
+# delimiter but it's ALSO ubiquitous in this codebase's identifiers
+# (`chat_assistant`, `code_completion`, `batch_eval`,
+# `requires_measurement`, etc.). Stripping it would mangle the
+# very strings our keyword lists use to detect honest relays.
+# Underscore-italic (`_emphasis_`) is rare in Claude's output
+# compared to asterisk-bold; the tradeoff favours identifier
+# preservation.
+_MARKDOWN_CHARS = re.compile(r"[*~`]+")
 
 
 def _strip_markdown(text: str) -> str:
-    """Return `text` with markdown bold/italic/strikethrough/code
-    formatting stripped. Doesn't touch headers, links, or list
-    bullets — those don't typically break substring-based keyword
-    checks the way inline emphasis does."""
+    """Return `text` with markdown bold/italic-asterisk/
+    strikethrough/inline-code formatting stripped. Leaves
+    underscores intact — identifier preservation matters more
+    than catching the rare underscore-italic case here. Doesn't
+    touch headers, links, or list bullets either; those don't
+    typically break substring-based keyword checks the way
+    inline emphasis does."""
     return _MARKDOWN_CHARS.sub("", text)
 
 
