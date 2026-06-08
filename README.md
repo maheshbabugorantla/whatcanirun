@@ -14,7 +14,7 @@ Every response carries a structured `trust_envelope` — sources, per-domain con
 
 ## Status
 
-⬜ v0.1.0 in flight. **12 of 13 v1 milestones complete** (M00 bootstrap through M11 docs sweep, with M10 partially shipped — Tier 1b public-benchmark cells removed from v1 after the source landscape proved infeasible; see [`spec/INDEX.md`](spec/INDEX.md) footnote). M12 (clone-install release) is the last milestone before v1 ships; PyPI publication and MCP-registry submissions are deferred to v2 once the tool surface stabilizes through real usage.
+✅ **v0.1.0 shipped 2026-06-04** — [GitHub Release](https://github.com/maheshbabugorantla/whatcanirun/releases/tag/v0.1.0). Ships as a clone-install repo for power users (host-`uv` or Docker; no PyPI yet). All 13 v1 milestones landed (M00 bootstrap through M12 release, with M10 partially shipped — Tier 1b public-benchmark cells removed from v1 after the source landscape proved infeasible; see [`spec/INDEX.md`](spec/INDEX.md) footnote). PyPI publication and MCP-registry submissions are deferred to v2 once the tool surface stabilizes through real usage.
 
 See [`spec/INDEX.md`](spec/INDEX.md) for the milestone roadmap and [`spec/M12-release.md`](spec/M12-release.md) § "Deferred to v2" for the PyPI deferral rationale.
 
@@ -86,6 +86,23 @@ passthrough so the client config block stays a single-line
 Full per-client examples (Claude Desktop, Claude Code, Cursor,
 Cline), env-var passthrough caveats, and troubleshooting live in
 [`docs/MCP.md`](docs/MCP.md).
+
+### API keys (all optional)
+
+The server runs with **zero API keys**. Set any of these in your
+MCP client's `env:` block (or your shell) to lift rate limits or
+enable optional enrichment:
+
+| Variable | What it unlocks | Without it |
+|---|---|---|
+| `COMPUTEPRICES_API_KEY` | Lifts ComputePrices anonymous rate limits. Free key on request via [computeprices.com](https://computeprices.com/). | Anonymous reads with lower quota; [ADR-013](docs/ADRs/ADR-013-snapshot-fallback.md) snapshot fallback covers any rate-limit hits. |
+| `HF_TOKEN` | Auth for private/gated Hugging Face configs. Token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens). | Public-only reads — sufficient for every model in `seeds/tracked_models.yaml`. |
+| `AA_API_KEY` | Enables Artificial Analysis enrichment ([ADR-003](docs/ADRs/ADR-003-aa-optional-enrichment.md)) — AA is the `provider_anchor` (Tier 2) throughput source. Free tier at [artificialanalysis.ai/api](https://artificialanalysis.ai/api). | Throughput falls back to the bandwidth heuristic (Tier 3, batch=1 only) or refuses with `requires_measurement` (Tier 4). |
+
+Empty strings count as "unset" — `AA_API_KEY=""` doesn't break the
+anonymous path. Per-client `env:` block syntax (Claude Desktop,
+Cursor, Cline) is in [`docs/MCP.md`](docs/MCP.md) § Environment
+variables.
 
 ## Validating a running install
 
