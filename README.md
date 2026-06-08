@@ -104,6 +104,31 @@ anonymous path. Per-client `env:` block syntax (Claude Desktop,
 Cursor, Cline) is in [`docs/MCP.md`](docs/MCP.md) § Environment
 variables.
 
+### Refreshing cached data
+
+A fresh install runs `whatcanirun-mcp prefetch` automatically
+(via `./scripts/install_host_uv.sh`). To re-fetch upstream
+catalogs and prices later — e.g. after the GPU price cache
+ages past CP's hourly refresh cadence — re-run prefetch
+directly:
+
+```bash
+# Host-uv
+uv run --directory /abs/path/to/whatcanirun whatcanirun-mcp prefetch
+
+# Docker (writes to the same named volume the MCP launcher mounts)
+docker run --rm -i \
+  -v whatcanirun-cache:/var/cache/whatcanirun \
+  whatcanirun:latest prefetch
+```
+
+Cache lives under `$XDG_CACHE_HOME/whatcanirun/` on host-uv
+(defaults to `~/.cache/whatcanirun/`) or the
+`whatcanirun-cache` named volume in Docker. Per-source TTLs,
+how to force a fresh fetch sooner than TTL, and "stale data"
+troubleshooting are documented in
+[`docs/MCP.md`](docs/MCP.md#stale-data-after-a-long-running-session).
+
 ## Validating a running install
 
 [`docs/SCENARIOS.md`](docs/SCENARIOS.md) carries eight prose-shape
