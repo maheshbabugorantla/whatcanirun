@@ -37,6 +37,17 @@ dev = [
     "pre-commit>=4",
     "types-pyyaml",
 ]
+# Claude Agent SDK is only needed by the Claude-in-the-loop e2e harness
+# (tests/e2e/test_scenarios_claude_in_loop.py). Kept out of `dev` so
+# `uv sync --extra dev` for the default test loop doesn't pull it.
+# Install with `uv sync --extra dev --extra e2e` before running
+# `pytest -m e2e` or `scripts/run_e2e_scenarios.sh`. The Agent SDK
+# (vs the base `anthropic` SDK) lets harness runs redeem against
+# Pro/Max plan Agent SDK credits per Anthropic's 2026-06-15 billing
+# split — see `scripts/run_e2e_scenarios.sh` heredoc.
+e2e = [
+    "claude-agent-sdk>=0.2,<0.3",
+]
 
 [project.scripts]
 whatcanirun-mcp = "whatcanirun.server:main"
@@ -90,10 +101,11 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-ra -q --strict-markers -m 'not network and not release'"
+addopts = "-ra -q --strict-markers -m 'not network and not release and not e2e'"
 markers = [
     "integration: tests that exercise the MCP tool surface end-to-end",
     "schema_evolution: tests that prove projection tolerates new upstream fields",
     "network: tests that make live HTTP requests; deselected by default (CI does not run them). Run locally with `pytest -m network` before releases.",
     "release: tests that drive the installed `whatcanirun-mcp` binary over stdio with FastMCP Client; deselected by default. Run via `pytest -m release` or `scripts/install_host_uv.sh` as part of the M12 release gate.",
+    "e2e: Claude-in-the-loop scenario tests that drive the MCP server through the Claude Agent SDK over real stdio; deselected by default. Require the `e2e` optional-deps group + EITHER `ANTHROPIC_API_KEY` (pay-as-you-go API balance) OR a logged-in Claude Code session (Pro/Max plan Agent SDK credit pool). Run via `pytest -m e2e` or `scripts/run_e2e_scenarios.sh`.",
 ]
