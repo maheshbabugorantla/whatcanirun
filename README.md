@@ -109,11 +109,10 @@ variables.
 A fresh install runs `whatcanirun-mcp prefetch` automatically
 (via `./scripts/install_host_uv.sh`). To re-fetch upstream
 catalogs and prices later — e.g. after the GPU price cache
-ages past CP's hourly refresh cadence — re-run prefetch
-directly:
+ages past its hourly TTL — re-run prefetch directly:
 
 ```bash
-# Host-uv
+# Host-uv (replace /abs/path/to/whatcanirun with your actual clone path)
 uv run --directory /abs/path/to/whatcanirun whatcanirun-mcp prefetch
 
 # Docker (writes to the same named volume the MCP launcher mounts)
